@@ -49,7 +49,14 @@ header.top{position:sticky;top:0;z-index:40;
 .brand h1{font-family:'Oswald';font-weight:700;letter-spacing:.16em;font-size:26px;margin:0;text-transform:uppercase}
 .brand h1 span{color:var(--gold)}
 .brand small{color:var(--muted);letter-spacing:.24em;font-size:9px;text-transform:uppercase;margin-top:3px;font-weight:500}
+.tabs-wrap{position:relative;flex:1;display:flex;min-width:0;align-items:center}
 nav.tabs{display:flex;gap:3px;flex:1;flex-wrap:wrap}
+.tabs-arrow{position:absolute;top:0;bottom:0;z-index:5;width:32px;border:0;cursor:pointer;color:var(--gold);
+  font-size:24px;font-family:'Oswald';line-height:1;display:flex;align-items:center;justify-content:center;
+  padding:0;transition:.15s}
+.tabs-arrow:hover{color:#f0be5f}
+.tabs-arrow.left{left:0;background:linear-gradient(90deg,var(--ink) 45%,rgba(20,17,16,0))}
+.tabs-arrow.right{right:0;background:linear-gradient(270deg,var(--ink) 45%,rgba(20,17,16,0))}
 .tab{background:none;border:0;color:var(--muted);cursor:pointer;font-family:'Oswald';text-transform:uppercase;
   letter-spacing:.08em;font-size:13px;font-weight:500;padding:8px 12px;border-radius:9px;
   display:flex;align-items:center;gap:6px;transition:.18s}
@@ -234,8 +241,9 @@ canvas.chart{max-height:220px}
   .brand{order:1;flex:1;margin-right:0}
   .brand small{letter-spacing:.18em}
   .icon-btn{order:2;width:36px;height:36px}
-  nav.tabs{order:3;flex-basis:100%;width:100%;flex-wrap:nowrap;overflow-x:auto;min-width:0;
-    -webkit-overflow-scrolling:touch;scrollbar-width:none;margin-top:2px;padding-bottom:2px}
+  .tabs-wrap{order:3;flex-basis:100%;width:100%;min-width:0;margin-top:2px}
+  nav.tabs{flex-wrap:nowrap;overflow-x:auto;min-width:0;flex:1;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
   nav.tabs::-webkit-scrollbar{display:none}
   .tab{flex:0 0 auto;font-size:12px;padding:8px 11px;letter-spacing:.05em}
   main{padding:18px 13px 90px}
@@ -282,17 +290,21 @@ canvas.chart{max-height:220px}
       <h1>Ciné<span>thèque</span></h1>
       <small>Films &amp; séries · votre séance</small>
     </div>
-    <nav class="tabs" v-if="apiKey">
-      <button class="tab" :class="{active:tab==='search'}" @click="go('search')">🔍 Recherche</button>
-      <button class="tab" :class="{active:tab==='watchlist'}" @click="go('watchlist')">
-        🎟️ À voir <span class="count" v-if="watchlistArr.length">{{watchlistArr.length}}</span>
-      </button>
-      <button class="tab" :class="{active:tab==='watched'}" @click="go('watched')">
-        ✓ Vus <span class="count" v-if="watchedArr.length">{{watchedArr.length}}</span>
-      </button>
-      <button class="tab" :class="{active:tab==='suggest'}" @click="go('suggest')">✨ Suggestions</button>
-      <button class="tab" :class="{active:tab==='profile'}" @click="go('profile')">🎭 Mon profil</button>
-    </nav>
+    <div class="tabs-wrap" v-if="apiKey">
+      <button class="tabs-arrow left" v-show="canL" @click="scrollTabs(-1)" aria-label="Onglets précédents">‹</button>
+      <nav class="tabs" ref="tabsEl" @scroll="updateArrows">
+        <button class="tab" :class="{active:tab==='search'}" @click="go('search')">🔍 Recherche</button>
+        <button class="tab" :class="{active:tab==='watchlist'}" @click="go('watchlist')">
+          🎟️ À voir <span class="count" v-if="watchlistArr.length">{{watchlistArr.length}}</span>
+        </button>
+        <button class="tab" :class="{active:tab==='watched'}" @click="go('watched')">
+          ✓ Vus <span class="count" v-if="watchedArr.length">{{watchedArr.length}}</span>
+        </button>
+        <button class="tab" :class="{active:tab==='suggest'}" @click="go('suggest')">✨ Suggestions</button>
+        <button class="tab" :class="{active:tab==='profile'}" @click="go('profile')">🎭 Mon profil</button>
+      </nav>
+      <button class="tabs-arrow right" v-show="canR" @click="scrollTabs(1)" aria-label="Onglets suivants">›</button>
+    </div>
     <button class="icon-btn" title="Réglages" @click="showSettings=true" v-if="apiKey">⚙</button>
   </div>
 </header>
@@ -1288,8 +1300,30 @@ createApp({
     }
     const filteredSuggestions=computed(()=>suggFilter.value==='all'?suggestions.value:suggestions.value.filter(m=>m.media_type===suggFilter.value));
 
+    // --- flèches de défilement des onglets ---
+    const tabsEl=ref(null),canL=ref(false),canR=ref(false);
+    function updateArrows(){
+      const el=tabsEl.value;if(!el){canL.value=false;canR.value=false;return;}
+      canL.value=el.scrollLeft>2;
+      canR.value=el.scrollLeft+el.clientWidth<el.scrollWidth-2;
+    }
+    function scrollTabs(dir){
+      const el=tabsEl.value;if(!el)return;
+      el.scrollBy({left:dir*160,behavior:'smooth'});
+      setTimeout(updateArrows,320);
+    }
+    function scrollActiveIntoView(){
+      nextTick(()=>{
+        const el=tabsEl.value;if(!el)return;
+        const a=el.querySelector('.tab.active');
+        if(a&&a.scrollIntoView)a.scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'});
+        setTimeout(updateArrows,320);
+      });
+    }
+
     function go(t){
       tab.value=t;if(t!=='search')person.value=null;
+      scrollActiveIntoView();
       if(t==='profile'){nextTick(renderCharts);if(!tmdbCompare.value.length)loadTmdbCompare();}
     }
 
@@ -1346,12 +1380,15 @@ createApp({
       watchlist.value=wl;
       actorStore.value=await Store.get('cine:actors',{});
       directorStore.value=await Store.get('cine:directors',{});
+      nextTick(updateArrows);
+      window.addEventListener('resize',updateArrows);
     });
 
     return{
       apiKey,keyInput,keyError,checkingKey,showSettings,saveKey,wipe,
       fileInput,importMsg,importOk,exportData,triggerImport,importData,
       tab,go,query,onType,clearSearch,searching,resultItems,resultPeople,searchFilter,countMovies,countTv,filteredResults,
+      tabsEl,canL,canR,updateArrows,scrollTabs,
       person,openPerson,openPersonById,personDirected,personActed,
       movie,movieLoading,openItem,closeMovie,cast,makers,regularSeasons,noteInput,noteSaved,debounceSaveNote,
       watched,watchlist,watchedArr,watchlistArr,watchedSort,watchedType,watchedSorted,
