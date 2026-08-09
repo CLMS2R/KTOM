@@ -67,6 +67,12 @@ nav.tabs{display:flex;gap:3px;flex:1;flex-wrap:wrap}
 .icon-btn{background:var(--panel);border:1px solid var(--line);color:var(--muted);width:38px;height:38px;
   border-radius:10px;cursor:pointer;font-size:16px;display:grid;place-items:center;transition:.18s}
 .icon-btn:hover{color:var(--gold);border-color:var(--gold-dim)}
+.sync{font-size:12px;line-height:1;user-select:none;transition:color .3s}
+.sync.synced{color:var(--green)}
+.sync.saving{color:var(--gold);animation:syncpulse 1s ease-in-out infinite}
+.sync.error{color:var(--rouge)}
+.sync.idle{color:var(--muted)}
+@keyframes syncpulse{0%,100%{opacity:.35}50%{opacity:1}}
 main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .searchwrap{position:relative;margin-bottom:20px}
 .searchwrap input{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ivory);
@@ -304,7 +310,7 @@ canvas.chart{max-height:220px}
       <h1>Ciné<span>thèque</span></h1>
       <small>Films &amp; séries · votre séance</small>
     </div>
-    <div class="tabs-wrap" v-if="apiKey">
+    <div class="tabs-wrap" v-if="ready">
       <button class="tabs-arrow left" v-show="canL" @click="scrollTabs(-1)" aria-label="Onglets précédents">‹</button>
       <nav class="tabs" ref="tabsEl" @scroll="updateArrows">
         <button class="tab" :class="{active:tab==='search'}" @click="go('search')">🔍 Recherche</button>
@@ -319,9 +325,11 @@ canvas.chart{max-height:220px}
       </nav>
       <button class="tabs-arrow right" v-show="canR" @click="scrollTabs(1)" aria-label="Onglets suivants">›</button>
     </div>
-    <button class="icon-btn" title="Réglages" @click="showSettings=true" v-if="apiKey">⚙</button>
+    <span class="sync" v-if="ready&&sbOn" :class="syncState"
+      :title="syncState==='saving'?'Synchronisation…':syncState==='synced'?'Synchronisé':syncState==='error'?'Hors ligne / erreur de synchro':'En attente'">●</span>
+    <button class="icon-btn" title="Réglages" @click="showSettings=true" v-if="ready">⚙</button>
   </div>
-  <div class="ticker" v-if="apiKey">
+  <div class="ticker" v-if="ready&&!sbOn">
     <div class="ticker-track">
       <span v-for="n in 2" :key="n">💾 Pensez à exporter vos données régulièrement (Réglages → Exporter) pour éviter toute perte — vos films, notes et listes ne sont stockés que dans ce navigateur.&nbsp;&nbsp;•&nbsp;&nbsp;</span>
     </div>
@@ -341,12 +349,40 @@ canvas.chart{max-height:220px}
   </ol>
 </div>
 
+<!-- CONNEXION / INSCRIPTION (si le cloud est activé et personne n'est connecté) -->
+<div v-else-if="needAuth" class="card">
+  <h2>{{authMode==='signup'?'Créer un compte 🎬':'Connexion 🎬'}}</h2>
+  <p>Connectez-vous pour retrouver et synchroniser vos films, notes et listes sur tous vos appareils.</p>
+  <label for="ae">Email</label>
+  <input id="ae" type="email" v-model.trim="authEmail" @keyup.enter="doAuth" autocomplete="email" placeholder="vous@exemple.com">
+  <label for="ap">Mot de passe</label>
+  <input id="ap" type="password" v-model="authPw" @keyup.enter="doAuth" autocomplete="current-password" placeholder="••••••••">
+  <p v-if="authError" style="color:var(--rouge);margin-top:10px;font-size:13.5px">{{authError}}</p>
+  <div style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button class="btn gold" @click="doAuth" :disabled="authBusy">
+      {{authBusy?'…':(authMode==='signup'?'Créer mon compte':'Se connecter')}}
+    </button>
+    <button class="btn ghost" @click="authMode=(authMode==='signup'?'signin':'signup');authError=''">
+      {{authMode==='signup'?"J'ai déjà un compte":'Créer un compte'}}
+    </button>
+  </div>
+</div>
+
 <!-- RÉGLAGES -->
 <div class="overlay" v-if="showSettings" @click.self="showSettings=false">
   <div class="modal" style="max-width:520px">
     <button class="close" @click="showSettings=false">✕</button>
     <div style="padding:28px">
       <h2 style="font-family:'Oswald';letter-spacing:.05em;margin-top:0">Réglages</h2>
+      <template v-if="sbOn&&user">
+        <label class="credit-label" style="margin-top:6px">Compte</label>
+        <p style="color:var(--ivory);font-size:13.5px;margin:4px 0 4px">{{user.email}}</p>
+        <p style="font-size:12px;margin:0 0 12px" :style="{color:syncState==='error'?'var(--rouge)':'var(--green)'}">
+          {{syncState==='saving'?'⟳ Synchronisation…':syncState==='error'?'⚠ Hors ligne — sauvegarde locale active':'✓ Données synchronisées dans le cloud'}}
+        </p>
+        <button class="btn ghost" @click="signOut">Se déconnecter</button>
+        <hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
+      </template>
       <p style="color:var(--muted);font-size:13px;line-height:1.5;margin-top:6px">Données locales : {{watchedArr.length}} titre(s) vu(s), {{watchlistArr.length}} à voir.</p>
       <label class="credit-label" style="margin-top:18px">Sauvegarde &amp; transfert</label>
       <p style="color:var(--muted);font-size:13px;line-height:1.55;margin:4px 0 12px">Exportez vos listes en JSON et réimportez-les sur n'importe quel appareil.</p>
@@ -362,7 +398,7 @@ canvas.chart{max-height:220px}
   </div>
 </div>
 
-<template v-if="apiKey">
+<template v-if="ready">
 
 <!-- ===== RECHERCHE ===== -->
 <section v-show="tab==='search'">
@@ -794,6 +830,7 @@ canvas.chart{max-height:220px}
 })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const {createApp,ref,computed,watch,onMounted,nextTick}=Vue;
 
@@ -805,6 +842,20 @@ const {createApp,ref,computed,watch,onMounted,nextTick}=Vue;
    Pour une clé TMDB gratuite le risque est faible (au pire, régénérez-la).
    ═══════════════════════════════════════════════════════════════════ */
 const DEFAULT_API_KEY='0aea9736cd852052e943c5fdd9b9a974';
+
+/* ═══════════════════════════════════════════════════════════════════
+   SYNCHRONISATION CLOUD — SUPABASE (comptes + sauvegarde continue)
+   Collez ici vos deux valeurs Supabase (elles sont PUBLIQUES, sans risque
+   tant que la sécurité par ligne « RLS » est activée sur la table saves) :
+     • SUPABASE_URL  = l'« API URL » (Settings → Data API)
+     • SUPABASE_KEY  = la « Publishable key » (Settings → API Keys)
+   Laissez vide ('') pour désactiver le cloud : l'appli fonctionne alors
+   en local uniquement (comme avant), sans comptes.
+   ⚠ N'utilisez JAMAIS la clé « secret » / service_role ici.
+   ═══════════════════════════════════════════════════════════════════ */
+const SUPABASE_URL='https://bkchegrpxqnbhtysgbby.supabase.co/rest/v1/';
+const SUPABASE_KEY='sb_publishable_d_wvWgEuwdRD7UYbQLMpmQ_8QkUj4vx';
+const SB=(SUPABASE_URL&&SUPABASE_KEY&&window.supabase)?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
 
 
 const Store={
@@ -918,6 +969,78 @@ createApp({
     const tab=ref('search');
     const toast=ref('');let toastT=null;
     function flash(m){toast.value=m;clearTimeout(toastT);toastT=setTimeout(()=>toast.value='',2400);}
+
+    // --- authentification & synchro cloud (Supabase) ---
+    const sbOn=!!SB;
+    const user=ref(null);
+    const authEmail=ref(''),authPw=ref(''),authMode=ref('signin'),authError=ref(''),authBusy=ref(false);
+    const syncState=ref(sbOn?'idle':'off');   // off | idle | saving | synced | error
+    const cloudReady=ref(false);
+    let cloudLoading=false, cloudSaveT=null;
+
+    const needAuth=computed(()=>!!apiKey.value && sbOn && !user.value);
+    const ready=computed(()=>!!apiKey.value && (!sbOn || !!user.value));
+
+    function authErrFr(msg){
+      const m=(msg||'').toLowerCase();
+      if(m.includes('invalid login'))return 'Email ou mot de passe incorrect.';
+      if(m.includes('already registered')||m.includes('already exists'))return 'Un compte existe déjà avec cet email.';
+      if(m.includes('password')&&m.includes('6'))return 'Le mot de passe doit faire au moins 6 caractères.';
+      if(m.includes('email'))return 'Adresse email invalide.';
+      return msg||'Erreur d\'authentification.';
+    }
+    async function doAuth(){
+      authError.value='';
+      if(!authEmail.value||!authPw.value){authError.value='Email et mot de passe requis.';return;}
+      authBusy.value=true;
+      try{
+        const res = authMode.value==='signup'
+          ? await SB.auth.signUp({email:authEmail.value,password:authPw.value})
+          : await SB.auth.signInWithPassword({email:authEmail.value,password:authPw.value});
+        if(res.error){authError.value=authErrFr(res.error.message);}
+        else{authPw.value='';}   // le reste est géré par onAuthStateChange
+      }catch(e){authError.value='Connexion au service impossible.';}
+      finally{authBusy.value=false;}
+    }
+    async function signOut(){
+      try{await SB.auth.signOut();}catch(e){}
+      user.value=null;cloudReady.value=false;syncState.value='idle';showSettings.value=false;
+      flash('Déconnecté.');
+    }
+
+    async function cloudLoad(){
+      if(!SB||!user.value||cloudLoading)return;
+      cloudLoading=true;syncState.value='saving';
+      try{
+        const {data,error}=await SB.from('saves').select('data').eq('user_id',user.value.id).maybeSingle();
+        if(error)throw error;
+        const cloud=(data&&data.data)||{};
+        // fusion : on garde tout, le cloud l'emporte sur les conflits de même clé
+        watched.value={...watched.value,...migrate(cloud.watched||{})};
+        watchlist.value={...watchlist.value,...migrate(cloud.watchlist||{})};
+        cloudReady.value=true;
+        await cloudSave();          // persiste la fusion côté cloud
+        flash('Synchronisé ✓');
+      }catch(e){syncState.value='error';cloudReady.value=true;}
+      finally{cloudLoading=false;}
+    }
+    async function cloudSave(){
+      if(!SB||!user.value)return;
+      syncState.value='saving';
+      try{
+        const {error}=await SB.from('saves').upsert({
+          user_id:user.value.id,
+          data:{watched:watched.value,watchlist:watchlist.value},
+          updated_at:new Date().toISOString()
+        });
+        syncState.value=error?'error':'synced';
+      }catch(e){syncState.value='error';}
+    }
+    function scheduleCloudSave(){
+      if(!SB||!user.value||!cloudReady.value)return;
+      clearTimeout(cloudSaveT);
+      cloudSaveT=setTimeout(cloudSave,1200);
+    }
 
     async function apiFetch(path,params={}){
       const usp=new URLSearchParams({api_key:apiKey.value,language:'fr-FR',...params});
@@ -1408,8 +1531,8 @@ createApp({
     }
 
     const loaded=ref(false);   // évite de marquer "non sauvegardé" pendant le chargement initial
-    watch(watched,v=>{Store.set('cine:watched',v);if(loaded.value)unsaved.value=true;},{deep:true});
-    watch(watchlist,v=>{Store.set('cine:watchlist',v);if(loaded.value)unsaved.value=true;},{deep:true});
+    watch(watched,v=>{Store.set('cine:watched',v);if(loaded.value)unsaved.value=true;scheduleCloudSave();},{deep:true});
+    watch(watchlist,v=>{Store.set('cine:watchlist',v);if(loaded.value)unsaved.value=true;scheduleCloudSave();},{deep:true});
     watch(actorStore,v=>Store.set('cine:actors',v),{deep:true});
     watch(directorStore,v=>Store.set('cine:directors',v),{deep:true});
 
@@ -1426,10 +1549,20 @@ createApp({
       window.addEventListener('resize',updateArrows);
       nextTick(()=>{loaded.value=true;});   // à partir d'ici, tout changement compte comme "non exporté"
       if(apiKey.value)loadTrending();
+      // authentification cloud
+      if(SB){
+        SB.auth.onAuthStateChange((_ev,session)=>{
+          user.value=session?session.user:null;
+          if(user.value&&!cloudReady.value)cloudLoad();
+        });
+        try{const {data}=await SB.auth.getSession();user.value=data.session?data.session.user:null;}catch(e){}
+        if(user.value&&!cloudReady.value)cloudLoad();
+      }
     });
 
     return{
       apiKey,keyInput,keyError,checkingKey,showSettings,saveKey,wipe,
+      sbOn,user,needAuth,ready,authEmail,authPw,authMode,authError,authBusy,doAuth,signOut,syncState,
       fileInput,importMsg,importOk,exportData,triggerImport,importData,unsaved,
       tab,go,query,onType,clearSearch,searching,resultItems,resultPeople,searchFilter,countMovies,countTv,filteredResults,
       trending,trendingLoading,trendFilter,filteredTrending,countTrendMovies,countTrendTv,
