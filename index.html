@@ -323,7 +323,7 @@ canvas.chart{max-height:220px}
   </div>
   <div class="ticker" v-if="apiKey">
     <div class="ticker-track">
-      <span v-for="n in 2" :key="n">Pensez à exporter vos données régulièrement (Réglages → Exporter) pour éviter toute perte — vos films, notes et listes ne sont stockés que dans ce navigateur.&nbsp;&nbsp;•&nbsp;&nbsp;</span>
+      <span v-for="n in 2" :key="n">💾 Pensez à exporter vos données régulièrement (Réglages → Exporter) pour éviter toute perte — vos films, notes et listes ne sont stockés que dans ce navigateur.&nbsp;&nbsp;•&nbsp;&nbsp;</span>
     </div>
   </div>
 </header>
@@ -421,9 +421,23 @@ canvas.chart{max-height:220px}
         <p>Essayez un autre titre ou le nom complet d'un acteur / réalisateur.</p>
       </div>
     </template>
-    <div v-else class="empty">
-      <div class="em">🎬</div><h3>Que regardez-vous ce soir ?</h3>
-      <p>Cherchez un film ou une série par son titre, ou tapez le nom d'un acteur ou d'un réalisateur.</p>
+    <div v-else>
+      <div v-if="trendingLoading" class="loading"><div class="spinner"></div>Chargement des tendances…</div>
+      <div v-else-if="trending.length">
+        <div class="section-title">🔥 Tendances de la semaine <span class="section-sub">populaires en ce moment</span></div>
+        <div class="filterrow">
+          <span class="chip" :class="{on:trendFilter==='all'}" @click="trendFilter='all'">Tout ({{trending.length}})</span>
+          <span class="chip" :class="{on:trendFilter==='movie'}" @click="trendFilter='movie'">Films ({{countTrendMovies}})</span>
+          <span class="chip" :class="{on:trendFilter==='tv'}" @click="trendFilter='tv'">Séries ({{countTrendTv}})</span>
+        </div>
+        <div class="grid">
+          <poster-card v-for="m in filteredTrending" :key="m.media_type+m.id" :item="m" :watched="isWatched(m)" :listed="isListed(m)" @open="openItem(m.id,m.media_type)"></poster-card>
+        </div>
+      </div>
+      <div v-else class="empty">
+        <div class="em">🎬</div><h3>Que regardez-vous ce soir ?</h3>
+        <p>Cherchez un film ou une série par son titre, ou tapez le nom d'un acteur ou d'un réalisateur.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -978,6 +992,21 @@ createApp({
     const countTv=computed(()=>resultItems.value.filter(m=>m.media_type==='tv').length);
     const filteredResults=computed(()=>searchFilter.value==='all'?resultItems.value:resultItems.value.filter(m=>m.media_type===searchFilter.value));
 
+    // --- tendances (affichées quand la recherche est vide) ---
+    const trending=ref([]),trendingLoading=ref(false),trendFilter=ref('all');
+    async function loadTrending(){
+      if(trending.value.length||trendingLoading.value)return;   // ne charger qu'une fois
+      trendingLoading.value=true;
+      try{
+        const data=await apiFetch('/trending/all/week');
+        trending.value=(data.results||[]).filter(x=>x.media_type==='movie'||x.media_type==='tv').map(x=>nz(x)).slice(0,20);
+      }catch(e){/* silencieux : on garde le message d'accueil */}
+      finally{trendingLoading.value=false;}
+    }
+    const countTrendMovies=computed(()=>trending.value.filter(m=>m.media_type==='movie').length);
+    const countTrendTv=computed(()=>trending.value.filter(m=>m.media_type==='tv').length);
+    const filteredTrending=computed(()=>trendFilter.value==='all'?trending.value:trending.value.filter(m=>m.media_type===trendFilter.value));
+
     async function openPerson(p){
       person.value=p;tab.value='search';window.scrollTo({top:0,behavior:'smooth'});
       try{personCredits.value=await apiFetch('/person/'+p.id+'/combined_credits');}catch(e){personCredits.value={cast:[],crew:[]};}
@@ -1396,12 +1425,14 @@ createApp({
       nextTick(updateArrows);
       window.addEventListener('resize',updateArrows);
       nextTick(()=>{loaded.value=true;});   // à partir d'ici, tout changement compte comme "non exporté"
+      if(apiKey.value)loadTrending();
     });
 
     return{
       apiKey,keyInput,keyError,checkingKey,showSettings,saveKey,wipe,
       fileInput,importMsg,importOk,exportData,triggerImport,importData,unsaved,
       tab,go,query,onType,clearSearch,searching,resultItems,resultPeople,searchFilter,countMovies,countTv,filteredResults,
+      trending,trendingLoading,trendFilter,filteredTrending,countTrendMovies,countTrendTv,
       tabsEl,canL,canR,updateArrows,scrollTabs,
       person,openPerson,openPersonById,personDirected,personActed,
       movie,movieLoading,openItem,closeMovie,cast,makers,regularSeasons,noteInput,noteSaved,debounceSaveNote,
