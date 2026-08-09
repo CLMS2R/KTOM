@@ -285,9 +285,21 @@ canvas.chart{max-height:220px}
   .wl-move{top:38px;right:6px}
   .wl-btn{width:32px;height:28px}
 }
+/* ---- Téléphone : 4 affiches par ligne ---- */
+@media(max-width:480px){
+  .grid{grid-template-columns:repeat(4,1fr);gap:9px}
+  .poster .meta{padding:8px 8px 9px}
+  .poster .meta h4{font-size:11px;min-height:28px;line-height:1.25}
+  .poster .meta .yr{font-size:10px}
+}
 @media(max-width:380px){
-  .grid{grid-template-columns:repeat(2,1fr)}
+  .grid{grid-template-columns:repeat(4,1fr);gap:7px}
   .stat{min-width:calc(50% - 9px)}
+  .wl-item .rank{width:20px;height:20px;font-size:10px;top:5px;left:5px}
+  .wl-move{top:28px;right:4px}
+  .wl-btn{width:24px;height:22px;font-size:9px}
+  .badge{font-size:8px;padding:2px 5px}
+  .myrating{font-size:9px;padding:2px 5px}
 }
 </style>
 </head>
