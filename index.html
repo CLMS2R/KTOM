@@ -148,11 +148,6 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .wl-item.over{outline:2px dashed var(--gold);outline-offset:4px;border-radius:14px}
 .wl-item .rank{position:absolute;top:8px;left:8px;z-index:4;width:26px;height:26px;border-radius:50%;
   background:var(--gold);color:var(--ink);font-family:'Oswald';font-weight:700;font-size:13px;display:grid;place-items:center;box-shadow:0 2px 9px rgba(0,0,0,.55)}
-.wl-move{position:absolute;top:42px;right:8px;z-index:4;display:flex;flex-direction:column;gap:5px}
-.wl-btn{width:30px;height:26px;border:1px solid var(--line);background:rgba(20,17,16,.86);color:var(--ivory);
-  border-radius:8px;cursor:pointer;font-size:11px;display:grid;place-items:center;transition:.15s}
-.wl-btn:hover:not(:disabled){color:var(--gold);border-color:var(--gold-dim)}
-.wl-btn:disabled{opacity:.3;cursor:default}
 /* overlay / modal */
 .overlay{position:fixed;inset:0;background:rgba(8,6,5,.78);backdrop-filter:blur(4px);z-index:60;
   display:flex;align-items:flex-start;justify-content:center;padding:34px 18px;overflow-y:auto}
@@ -282,8 +277,7 @@ canvas.chart{max-height:220px}
   .fade-enter-from,.fade-leave-to{transform:translateY(10px)}
   .modal{border-radius:16px}
   .overlay{padding:16px 12px}
-  .wl-move{top:38px;right:6px}
-  .wl-btn{width:32px;height:28px}
+  .wl-item .rank{top:6px;left:6px}
 }
 /* ---- Téléphone : 4 affiches par ligne ---- */
 @media(max-width:480px){
@@ -296,8 +290,6 @@ canvas.chart{max-height:220px}
   .grid{grid-template-columns:repeat(4,1fr);gap:7px}
   .stat{min-width:calc(50% - 9px)}
   .wl-item .rank{width:20px;height:20px;font-size:10px;top:5px;left:5px}
-  .wl-move{top:28px;right:4px}
-  .wl-btn{width:24px;height:22px;font-size:9px}
   .badge{font-size:8px;padding:2px 5px}
   .myrating{font-size:9px;padding:2px 5px}
 }
@@ -455,7 +447,7 @@ canvas.chart{max-height:220px}
     <span class="chip" :class="{on:watchlistType==='movie'}" @click="watchlistType='movie'">Films ({{watchlistMovies}})</span>
     <span class="chip" :class="{on:watchlistType==='tv'}" @click="watchlistType='tv'">Séries ({{watchlistTv}})</span>
   </div>
-  <p class="hint-order" v-if="watchlistView.length>1">↕ Glissez les affiches (au doigt ou à la souris) pour définir votre ordre, ou utilisez les flèches.</p>
+  <p class="hint-order" v-if="watchlistView.length>1">↕ Glissez les affiches (au doigt ou à la souris) pour définir votre ordre de visionnage.</p>
   <div v-if="watchlistView.length" class="grid">
     <div class="wl-item" v-for="(entry,pos) in watchlistView" :key="entry.m.media_type+entry.m.id"
          :data-idx="entry.idx"
@@ -464,10 +456,6 @@ canvas.chart{max-height:220px}
          @touchstart="onTouchStart(entry.idx,$event)" @touchmove="onTouchMove($event)" @touchend="onTouchEnd"
          :class="{dragging:dragIndex===entry.idx,over:overIndex===entry.idx&&dragIndex!==entry.idx}">
       <span class="rank">{{entry.idx+1}}</span>
-      <div class="wl-move">
-        <button class="wl-btn" :disabled="pos===0" @click.stop="moveInView(pos,-1)">▲</button>
-        <button class="wl-btn" :disabled="pos===watchlistView.length-1" @click.stop="moveInView(pos,1)">▼</button>
-      </div>
       <poster-card :item="entry.m" :listed="false" :show-score="false" @open="openItem(entry.m.id,entry.m.media_type)"></poster-card>
     </div>
   </div>
@@ -1114,7 +1102,6 @@ createApp({
       const arr=watchlistArr.value.slice();const[moved]=arr.splice(from,1);arr.splice(to,0,moved);
       const map={};arr.forEach((m,i)=>{const k=keyOf(m);map[k]={...watchlist.value[k],order:i};});watchlist.value=map;
     }
-    function moveUp(i){reorder(i,i-1);}function moveDown(i){reorder(i,i+1);}
     function onDragStart(i){dragIndex.value=i;}function onDragOver(i){overIndex.value=i;}
     function onDrop(i){reorder(dragIndex.value,i);dragIndex.value=-1;overIndex.value=-1;}
     function onDragEnd(){dragIndex.value=-1;overIndex.value=-1;}
@@ -1122,7 +1109,6 @@ createApp({
     // --- glisser-déposer tactile (iPhone / Android) ---
     const touchDrag={active:false,from:null,startX:0,startY:0};
     function onTouchStart(idx,e){
-      if(e.target.closest('.wl-move'))return;          // ne pas démarrer depuis les flèches
       const t=e.touches[0];
       touchDrag.active=false;touchDrag.from=idx;touchDrag.startX=t.clientX;touchDrag.startY=t.clientY;
       dragIndex.value=-1;overIndex.value=-1;
@@ -1155,12 +1141,6 @@ createApp({
       const arr=watchlistArr.value.map((m,i)=>({m,idx:i}));
       return watchlistType.value==='all'?arr:arr.filter(e=>e.m.media_type===watchlistType.value);
     });
-    // déplace en tenant compte des éléments visibles (saute les titres masqués par le filtre)
-    function moveInView(pos,dir){
-      const view=watchlistView.value,target=pos+dir;
-      if(target<0||target>=view.length)return;
-      reorder(view[pos].idx,view[target].idx);
-    }
 
     // heures estimées
     const totalHours=computed(()=>{
@@ -1429,9 +1409,9 @@ createApp({
       person,openPerson,openPersonById,personDirected,personActed,
       movie,movieLoading,openItem,closeMovie,cast,makers,regularSeasons,noteInput,noteSaved,debounceSaveNote,
       watched,watchlist,watchedArr,watchlistArr,watchedSort,watchedType,watchedSorted,
-      dragIndex,overIndex,moveUp,moveDown,onDragStart,onDragOver,onDrop,onDragEnd,
+      dragIndex,overIndex,onDragStart,onDragOver,onDrop,onDragEnd,
       onTouchStart,onTouchMove,onTouchEnd,
-      watchlistType,watchlistMovies,watchlistTv,watchlistView,moveInView,
+      watchlistType,watchlistMovies,watchlistTv,watchlistView,
       countWatchedMovies,countWatchedTv,totalHours,
       isWatched,isListed,myRating,toggleList,toggleWatched,removeWatched,rate,
       getSeenEps,setSeenEps,tvPct,tvProgressLabel,inProgressTv,
