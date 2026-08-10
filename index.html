@@ -278,6 +278,13 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .follow-name{flex:1;font-family:'Oswald';font-size:18px;letter-spacing:.03em;min-width:0}
 .follow-count{color:var(--muted);font-size:12.5px}
 .follow-go{color:var(--gold);font-size:22px;line-height:1}
+/* en-tête détail d'un suivi avec sa bannière en fond */
+.follow-detail-head{position:relative;border-radius:14px;overflow:hidden;margin-bottom:22px;
+  background-size:cover;background-position:center 28%;background-color:var(--panel-2);border:1px solid var(--line)}
+.follow-detail-head .fdh-overlay{background:linear-gradient(180deg,rgba(20,17,16,.5) 0%,rgba(20,17,16,.82) 100%);padding:16px 18px 18px}
+.fdh-back{font-size:13px;margin-bottom:16px}
+.fdh-id{display:flex;align-items:center;gap:12px}
+.fdh-id h2{font-family:'Oswald';letter-spacing:.04em;margin:0;flex:1;min-width:0;font-size:24px}
 .profile-desc{color:var(--muted);font-size:14px;line-height:1.6;max-width:600px}
 /* sélecteur de bannière */
 .banner-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-top:16px}
@@ -801,11 +808,15 @@ canvas.chart{max-height:220px}
 
   <!-- VUE DÉTAIL : activité d'une personne -->
   <template v-else>
-    <button class="btn ghost" style="font-size:13px;margin-bottom:16px" @click="closeFollow">‹ Retour à mes suivis</button>
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
-      <span class="follow-ava lg" :style="{borderColor:followArchetype(activeFollow).color}"><pixel-sprite :def="followArchetype(activeFollow).def" :size="40"></pixel-sprite></span>
-      <h2 style="font-family:'Oswald';letter-spacing:.04em;margin:0;flex:1">@{{activeFollow}}</h2>
-      <button class="btn ghost" style="font-size:12.5px;padding:6px 12px;color:var(--rouge);border-color:var(--rouge)" @click="removeFollow(activeFollow)">Ne plus suivre</button>
+    <div class="follow-detail-head" :style="followBanner(activeFollow)?{backgroundImage:'url('+img(followBanner(activeFollow),'w780')+')'}:{}">
+      <div class="fdh-overlay">
+        <button class="btn ghost fdh-back" @click="closeFollow">‹ Retour à mes suivis</button>
+        <div class="fdh-id">
+          <span class="follow-ava lg" :style="{borderColor:followArchetype(activeFollow).color}"><pixel-sprite :def="followArchetype(activeFollow).def" :size="40"></pixel-sprite></span>
+          <h2>@{{activeFollow}}</h2>
+          <button class="btn ghost" style="font-size:12.5px;padding:6px 12px;color:var(--rouge);border-color:var(--rouge)" @click="removeFollow(activeFollow)">Ne plus suivre</button>
+        </div>
+      </div>
     </div>
     <div v-if="followData[activeFollow]&&followData[activeFollow].loading" class="loading"><div class="spinner"></div>Chargement de l'activité…</div>
     <div v-else-if="followData[activeFollow]&&followData[activeFollow].error" class="empty"><div class="em">📡</div><h3>Activité indisponible</h3><p>Impossible de récupérer l'activité pour le moment.</p></div>
@@ -1290,6 +1301,17 @@ createApp({
       const fd=followData.value[p];
       const a=archetypeOf(fd&&fd.data&&fd.data.watched);
       return{def:SPRITES[a.sprite]||SPRITES.apprenti,color:a.color};
+    }
+    // affiche de bannière choisie par la personne suivie (repli : mieux notée, puis 1re)
+    function followBanner(p){
+      const fd=followData.value[p];const d=fd&&fd.data;if(!d)return null;
+      const w=d.watched||{};
+      let film=w[d.banner];
+      if(!film){
+        const arr=Object.values(w);
+        film=arr.filter(m=>m&&m.rating>0).sort((a,b)=>b.rating-a.rating)[0]||arr[0]||null;
+      }
+      return film&&film.poster_path?film.poster_path:null;
     }
     watch(follows,v=>{Store.set('cine:follows',v);scheduleCloudSave();},{deep:true});
 
@@ -1888,7 +1910,7 @@ createApp({
       apiKey,keyInput,keyError,checkingKey,showSettings,saveKey,wipe,
       sbOn,user,needAuth,ready,authName,authPw,authMode,authError,authBusy,doAuth,signOut,syncState,displayName,
       follows,followData,activityInput,activityError,activityBusy,addFollow,removeFollow,activityItems,
-      activeFollow,activityExpanded,shownActivity,openFollow,closeFollow,followArchetype,
+      activeFollow,activityExpanded,shownActivity,openFollow,closeFollow,followArchetype,followBanner,
       fileInput,importMsg,importOk,exportData,triggerImport,importData,unsaved,
       tab,go,query,onType,clearSearch,searching,resultItems,resultPeople,searchFilter,countMovies,countTv,filteredResults,
       trending,trendingLoading,trendFilter,filteredTrending,countTrendMovies,countTrendTv,
