@@ -253,6 +253,14 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .pseudo-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pseudo-name{font-family:'Oswald';font-size:28px;letter-spacing:.04em;line-height:1}
 .archetype-line{font-family:'Oswald';font-size:14px;letter-spacing:.08em;text-transform:uppercase;margin:8px 0 12px}
+/* miniatures critiques + séries en cours */
+.review-item{display:flex;gap:12px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.review-thumb{width:46px;height:69px;flex-shrink:0;border-radius:6px;object-fit:cover;background:var(--panel-2);cursor:pointer;transition:.15s}
+.review-thumb:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.review-thumb.noimg{display:grid;place-items:center;font-size:20px;cursor:default}
+.prog-card{display:flex;gap:12px;align-items:center}
+.prog-thumb{width:44px;height:66px;flex-shrink:0;border-radius:6px;object-fit:cover;background:var(--panel-2)}
+.prog-thumb.noimg{display:grid;place-items:center;font-size:20px}
 .profile-desc{color:var(--muted);font-size:14px;line-height:1.6;max-width:600px}
 /* sélecteur de bannière */
 .banner-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-top:16px}
@@ -552,12 +560,16 @@ canvas.chart{max-height:220px}
   <div v-if="inProgressTv.length" style="margin-bottom:30px">
     <div class="section-title">📺 Séries en cours <span class="section-sub">à continuer</span></div>
     <div class="db-grid">
-      <div class="db-card" v-for="m in inProgressTv" :key="'p'+m.id" style="cursor:pointer;padding:16px" @click="openItem(m.id,'tv')">
-        <div style="font-size:14px;font-weight:600;margin-bottom:8px">{{m.title}}</div>
-        <div class="progress-bar" style="width:100%">
-          <div class="progress-fill" :class="{done:tvPct(m)===100}" :style="{width:tvPct(m)+'%'}"></div>
+      <div class="db-card prog-card" v-for="m in inProgressTv" :key="'p'+m.id" style="cursor:pointer;padding:14px" @click="openItem(m.id,'tv')">
+        <img v-if="m.poster_path" class="prog-thumb" :src="img(m.poster_path,'w92')" loading="lazy">
+        <div v-else class="prog-thumb noimg">📺</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600;margin-bottom:8px">{{m.title}}</div>
+          <div class="progress-bar" style="width:100%">
+            <div class="progress-fill" :class="{done:tvPct(m)===100}" :style="{width:tvPct(m)+'%'}"></div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">{{tvProgressLabel(m)}}</div>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px">{{tvProgressLabel(m)}}</div>
       </div>
     </div>
   </div>
@@ -641,7 +653,7 @@ canvas.chart{max-height:220px}
             <span class="pseudo-name">{{displayName}}</span>
             <span class="lvl-badge" :style="{borderColor:profile.color,color:profile.color}">Niv. {{profile.level}}</span>
           </div>
-          <div class="archetype-line" :style="{color:profile.color}">{{profile.emoji}} {{profile.name}} · {{profile.klass}}</div>
+          <div class="archetype-line" :style="{color:profile.color}"><span style="display:inline-block;vertical-align:-5px;margin-right:6px"><pixel-sprite :def="spriteDef" :size="22"></pixel-sprite></span>{{profile.name}} · {{profile.klass}}</div>
           <div class="profile-desc">{{profile.desc}}</div>
           <div class="profile-badges">
             <div class="pbadge"><b>{{topGenreName||'—'}}</b>Genre préféré</div>
@@ -656,10 +668,14 @@ canvas.chart{max-height:220px}
     <!-- CRITIQUES (3 dernières, dépliable) -->
     <div class="db-card" style="margin-bottom:22px">
       <h3>💬 Vos critiques récentes</h3>
-      <div v-for="m in shownNotes" :key="m.media_type+m.id" style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line)">
-        <div style="font-weight:600;font-size:13.5px;margin-bottom:4px">{{m.title}}</div>
-        <div style="font-size:12px;color:var(--gold);margin-bottom:6px">★ {{m.rating}} / 5</div>
-        <div style="font-size:13px;color:var(--muted);font-style:italic;line-height:1.5">« {{m.note}} »</div>
+      <div v-for="m in shownNotes" :key="m.media_type+m.id" class="review-item">
+        <img v-if="m.poster_path" class="review-thumb" :src="img(m.poster_path,'w92')" loading="lazy" @click="openItem(m.id,m.media_type)">
+        <div v-else class="review-thumb noimg">🎬</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13.5px;margin-bottom:4px">{{m.title}}</div>
+          <div style="font-size:12px;color:var(--gold);margin-bottom:6px">★ {{m.rating}} / 5</div>
+          <div style="font-size:13px;color:var(--muted);font-style:italic;line-height:1.5">« {{m.note}} »</div>
+        </div>
       </div>
       <p v-if="!allNotes.length" style="color:var(--muted);font-size:13px">Rédigez des critiques dans les fiches des titres que vous avez vus.</p>
       <button v-if="allNotes.length>3" class="btn ghost" style="font-size:13px" @click="reviewsExpanded=!reviewsExpanded">
