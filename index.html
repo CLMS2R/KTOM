@@ -320,7 +320,6 @@ canvas.chart{max-height:220px}
         <button class="tab" :class="{active:tab==='watched'}" @click="go('watched')">
           ✓ Vus <span class="count" v-if="watchedArr.length">{{watchedArr.length}}</span>
         </button>
-        <button class="tab" :class="{active:tab==='suggest'}" @click="go('suggest')">✨ Suggestions</button>
         <button class="tab" :class="{active:tab==='profile'}" @click="go('profile')">🎭 Mon profil</button>
       </nav>
       <button class="tabs-arrow right" v-show="canR" @click="scrollTabs(1)" aria-label="Onglets suivants">›</button>
@@ -458,22 +457,40 @@ canvas.chart{max-height:220px}
       </div>
     </template>
     <div v-else>
-      <div v-if="trendingLoading" class="loading"><div class="spinner"></div>Chargement des tendances…</div>
-      <div v-else-if="trending.length">
-        <div class="section-title">🔥 Tendances de la semaine <span class="section-sub">populaires en ce moment</span></div>
+      <!-- suggestions personnalisées si disponibles -->
+      <div v-if="suggesting" class="loading"><div class="spinner"></div>Analyse de vos goûts…</div>
+      <template v-else-if="suggestions.length">
+        <div class="section-title">✨ Suggestions pour vous <span class="section-sub">d'après vos notes<span v-if="topGenreName"> · faible pour le genre {{topGenreName}}</span></span></div>
         <div class="filterrow">
-          <span class="chip" :class="{on:trendFilter==='all'}" @click="trendFilter='all'">Tout ({{trending.length}})</span>
-          <span class="chip" :class="{on:trendFilter==='movie'}" @click="trendFilter='movie'">Films ({{countTrendMovies}})</span>
-          <span class="chip" :class="{on:trendFilter==='tv'}" @click="trendFilter='tv'">Séries ({{countTrendTv}})</span>
+          <span class="chip" :class="{on:suggFilter==='all'}" @click="suggFilter='all'">Tout</span>
+          <span class="chip" :class="{on:suggFilter==='movie'}" @click="suggFilter='movie'">Films</span>
+          <span class="chip" :class="{on:suggFilter==='tv'}" @click="suggFilter='tv'">Séries</span>
+          <span style="width:8px"></span>
+          <span class="chip" @click="buildSuggestions">↻ Rafraîchir</span>
         </div>
         <div class="grid">
-          <poster-card v-for="m in filteredTrending" :key="m.media_type+m.id" :item="m" :watched="isWatched(m)" :listed="isListed(m)" @open="openItem(m.id,m.media_type)"></poster-card>
+          <poster-card v-for="m in filteredSuggestions" :key="m.media_type+m.id" :item="m" :reason="m.reason" @open="openItem(m.id,m.media_type)"></poster-card>
         </div>
-      </div>
-      <div v-else class="empty">
-        <div class="em">🎬</div><h3>Que regardez-vous ce soir ?</h3>
-        <p>Cherchez un film ou une série par son titre, ou tapez le nom d'un acteur ou d'un réalisateur.</p>
-      </div>
+      </template>
+      <!-- repli : tendances (utile tant qu'il n'y a pas assez de notes) -->
+      <template v-else>
+        <div v-if="trendingLoading" class="loading"><div class="spinner"></div>Chargement des tendances…</div>
+        <div v-else-if="trending.length">
+          <div class="section-title">🔥 Tendances de la semaine <span class="section-sub">populaires en ce moment</span></div>
+          <div class="filterrow">
+            <span class="chip" :class="{on:trendFilter==='all'}" @click="trendFilter='all'">Tout ({{trending.length}})</span>
+            <span class="chip" :class="{on:trendFilter==='movie'}" @click="trendFilter='movie'">Films ({{countTrendMovies}})</span>
+            <span class="chip" :class="{on:trendFilter==='tv'}" @click="trendFilter='tv'">Séries ({{countTrendTv}})</span>
+          </div>
+          <div class="grid">
+            <poster-card v-for="m in filteredTrending" :key="m.media_type+m.id" :item="m" :watched="isWatched(m)" :listed="isListed(m)" @open="openItem(m.id,m.media_type)"></poster-card>
+          </div>
+        </div>
+        <div v-else class="empty">
+          <div class="em">🎬</div><h3>Que regardez-vous ce soir ?</h3>
+          <p>Cherchez un film ou une série par son titre, ou tapez le nom d'un acteur ou d'un réalisateur.</p>
+        </div>
+      </template>
     </div>
   </div>
 </section>
@@ -552,39 +569,6 @@ canvas.chart{max-height:220px}
 </section>
 
 <!-- ===== SUGGESTIONS ===== -->
-<section v-show="tab==='suggest'">
-  <div class="section-title">Suggestions personnalisées <span class="section-sub">d'après vos notes</span></div>
-  <div v-if="ratedCount<1" class="empty">
-    <div class="em">✨</div><h3>Notez d'abord quelques titres</h3>
-    <p>Attribuez une note à au moins un titre vu pour recevoir des suggestions.</p>
-    <button class="btn gold" style="margin-top:18px" @click="go('search')">Commencer</button>
-  </div>
-  <template v-else>
-    <p style="color:var(--muted);font-size:14px;margin:-4px 0 18px;line-height:1.5">
-      Basé sur <b style="color:var(--ivory)">{{ratedCount}}</b> titre(s) noté(s)<span v-if="topGenreName">, avec un faible pour le genre <b style="color:var(--gold)">{{topGenreName}}</b></span>.
-    </p>
-    <div class="filterrow">
-      <button class="btn gold" @click="buildSuggestions" :disabled="suggesting">
-        {{suggesting?'Analyse de vos goûts…':(suggestions.length?'↻ Rafraîchir':'Générer mes suggestions')}}
-      </button>
-      <template v-if="suggestions.length">
-        <span style="width:8px"></span>
-        <span class="chip" :class="{on:suggFilter==='all'}" @click="suggFilter='all'">Tout</span>
-        <span class="chip" :class="{on:suggFilter==='movie'}" @click="suggFilter='movie'">Films</span>
-        <span class="chip" :class="{on:suggFilter==='tv'}" @click="suggFilter='tv'">Séries</span>
-      </template>
-    </div>
-    <div v-if="suggesting" class="loading"><div class="spinner"></div>On feuillette le catalogue…</div>
-    <div v-else-if="filteredSuggestions.length" class="grid">
-      <poster-card v-for="m in filteredSuggestions" :key="m.media_type+m.id" :item="m" :reason="m.reason" @open="openItem(m.id,m.media_type)"></poster-card>
-    </div>
-    <div v-else-if="suggestedOnce" class="empty">
-      <div class="em">🤔</div><h3>Rien de neuf pour l'instant</h3>
-      <p>Notez davantage de titres pour élargir les recommandations.</p>
-    </div>
-  </template>
-</section>
-
 <!-- ===== PROFIL CINÉPHILE ===== -->
 <section v-show="tab==='profile'">
   <div v-if="!watchedArr.length" class="empty">
@@ -1022,6 +1006,8 @@ createApp({
         cloudReady.value=true;
         await cloudSave();          // persiste la fusion côté cloud
         flash('Synchronisé ✓');
+        // suggestions par défaut une fois les données cloud chargées
+        if(ratedCount.value>=1&&!suggestions.value.length&&!suggesting.value)buildSuggestions();
       }catch(e){syncState.value='error';cloudReady.value=true;}
       finally{cloudLoading=false;}
     }
@@ -1499,6 +1485,7 @@ createApp({
     function go(t){
       tab.value=t;if(t!=='search')person.value=null;
       scrollActiveIntoView();
+      if(t==='search'&&ratedCount.value>=1&&!suggestions.value.length&&!suggesting.value)buildSuggestions();
       if(t==='profile'){nextTick(renderCharts);if(!tmdbCompare.value.length)loadTmdbCompare();}
     }
 
@@ -1559,7 +1546,10 @@ createApp({
       nextTick(updateArrows);
       window.addEventListener('resize',updateArrows);
       nextTick(()=>{loaded.value=true;});   // à partir d'ici, tout changement compte comme "non exporté"
-      if(apiKey.value)loadTrending();
+      if(apiKey.value){
+        if(ratedCount.value>=1)buildSuggestions();   // suggestions par défaut dans la recherche
+        else loadTrending();                          // sinon repli tendances
+      }
       // authentification cloud
       if(SB){
         SB.auth.onAuthStateChange((_ev,session)=>{
