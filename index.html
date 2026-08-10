@@ -267,6 +267,17 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .activity-entry{margin-bottom:4px}
 .activity-msg{font-size:13px;color:var(--muted);margin:0 0 8px}
 .activity-msg b{color:var(--gold);font-weight:600}
+/* liste des personnes suivies */
+.follow-list{display:flex;flex-direction:column;gap:10px}
+.follow-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;cursor:pointer;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;transition:.15s}
+.follow-row:hover{border-color:var(--gold-dim);transform:translateY(-1px)}
+.follow-ava{width:40px;height:40px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;
+  background:var(--panel-2);border:2px solid var(--gold);color:var(--gold);font-family:'Oswald';font-size:19px;font-weight:600}
+.follow-ava.lg{width:52px;height:52px;font-size:24px}
+.follow-name{flex:1;font-family:'Oswald';font-size:18px;letter-spacing:.03em;min-width:0}
+.follow-count{color:var(--muted);font-size:12.5px}
+.follow-go{color:var(--gold);font-size:22px;line-height:1}
 .profile-desc{color:var(--muted);font-size:14px;line-height:1.6;max-width:600px}
 /* sélecteur de bannière */
 .banner-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-top:16px}
@@ -762,34 +773,49 @@ canvas.chart{max-height:220px}
 
 <!-- ===== ACTIVITÉ (suivi d'utilisateurs) ===== -->
 <section v-show="tab==='activity'" v-if="sbOn">
-  <div class="section-title">👥 Activité <span class="section-sub">suivez vos amis par leur pseudo</span></div>
-  <p style="color:var(--muted);font-size:13.5px;line-height:1.55;margin:-4px 0 16px;max-width:600px">
-    Saisissez le <b style="color:var(--ivory)">pseudo exact</b> d'une personne pour la suivre. Ses notes et critiques apparaîtront ici, mises à jour en temps réel.
-  </p>
-  <div class="follow-add">
-    <input v-model.trim="activityInput" @keyup.enter="addFollow" placeholder="Pseudo exact (ex. marc)" autocapitalize="none" spellcheck="false">
-    <button class="btn gold" @click="addFollow" :disabled="activityBusy">{{activityBusy?'…':'Suivre'}}</button>
-  </div>
-  <p v-if="activityError" style="color:var(--rouge);font-size:13px;margin:0 0 10px">{{activityError}}</p>
+  <!-- VUE LISTE : personnes suivies -->
+  <template v-if="!activeFollow">
+    <div class="section-title">👥 Activité <span class="section-sub">suivez vos amis par leur pseudo</span></div>
+    <p style="color:var(--muted);font-size:13.5px;line-height:1.55;margin:-4px 0 16px;max-width:600px">
+      Saisissez le <b style="color:var(--ivory)">pseudo exact</b> d'une personne pour la suivre, puis cliquez sur son nom pour consulter son activité.
+    </p>
+    <div class="follow-add">
+      <input v-model.trim="activityInput" @keyup.enter="addFollow" placeholder="Pseudo exact (ex. marc)" autocapitalize="none" spellcheck="false">
+      <button class="btn gold" @click="addFollow" :disabled="activityBusy">{{activityBusy?'…':'Suivre'}}</button>
+    </div>
+    <p v-if="activityError" style="color:var(--rouge);font-size:13px;margin:0 0 10px">{{activityError}}</p>
 
-  <div v-if="!follows.length" class="empty">
-    <div class="em">👥</div><h3>Vous ne suivez personne</h3>
-    <p>Ajoutez le pseudo d'un ami ci-dessus pour suivre ses notes et critiques.</p>
-  </div>
+    <div v-if="!follows.length" class="empty">
+      <div class="em">👥</div><h3>Vous ne suivez personne</h3>
+      <p>Ajoutez le pseudo d'un ami ci-dessus pour suivre ses notes et critiques.</p>
+    </div>
+    <div v-else class="follow-list">
+      <button class="follow-row" v-for="p in follows" :key="p" @click="openFollow(p)">
+        <span class="follow-ava">{{p.charAt(0).toUpperCase()}}</span>
+        <span class="follow-name">@{{p}}</span>
+        <span class="follow-count" v-if="followData[p]&&!followData[p].loading&&!followData[p].error">{{activityItems(p).length}} activité(s)</span>
+        <span class="follow-go">›</span>
+      </button>
+    </div>
+  </template>
+
+  <!-- VUE DÉTAIL : activité d'une personne -->
   <template v-else>
-    <div class="db-card" v-for="p in follows" :key="p" style="margin-bottom:18px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <h3 style="margin:0;flex:1">@{{p}}</h3>
-        <button class="btn ghost" style="font-size:12.5px;padding:6px 12px;color:var(--rouge);border-color:var(--rouge)" @click="removeFollow(p)">Ne plus suivre</button>
-      </div>
-      <div v-if="followData[p]&&followData[p].loading" style="color:var(--muted);font-size:13px">Chargement…</div>
-      <div v-else-if="followData[p]&&followData[p].error" style="color:var(--muted);font-size:13px">Activité indisponible pour le moment.</div>
+    <button class="btn ghost" style="font-size:13px;margin-bottom:16px" @click="closeFollow">‹ Retour à mes suivis</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+      <span class="follow-ava lg">{{activeFollow.charAt(0).toUpperCase()}}</span>
+      <h2 style="font-family:'Oswald';letter-spacing:.04em;margin:0;flex:1">@{{activeFollow}}</h2>
+      <button class="btn ghost" style="font-size:12.5px;padding:6px 12px;color:var(--rouge);border-color:var(--rouge)" @click="removeFollow(activeFollow)">Ne plus suivre</button>
+    </div>
+    <div v-if="followData[activeFollow]&&followData[activeFollow].loading" class="loading"><div class="spinner"></div>Chargement de l'activité…</div>
+    <div v-else-if="followData[activeFollow]&&followData[activeFollow].error" class="empty"><div class="em">📡</div><h3>Activité indisponible</h3><p>Impossible de récupérer l'activité pour le moment.</p></div>
+    <template v-else>
+      <div v-if="!activityItems(activeFollow).length" class="empty"><div class="em">🎬</div><h3>Aucune activité</h3><p>Cette personne n'a pas encore noté ni critiqué de titre.</p></div>
       <template v-else>
-        <div v-if="!activityItems(p).length" style="color:var(--muted);font-size:13px">Aucune note ni critique pour l'instant.</div>
-        <div v-for="m in activityItems(p)" :key="m.media_type+m.id" class="activity-entry">
+        <div v-for="m in shownActivity(activeFollow)" :key="m.media_type+m.id" class="activity-entry">
           <p class="activity-msg">
-            <template v-if="m.note&&m.note.trim()"><b>{{p}}</b> a formulé la critique suivante :</template>
-            <template v-else><b>{{p}}</b> a attribué la note de :</template>
+            <template v-if="m.note&&m.note.trim()"><b>{{activeFollow}}</b> a formulé la critique suivante :</template>
+            <template v-else><b>{{activeFollow}}</b> a attribué la note de :</template>
           </p>
           <div class="review-item">
             <img v-if="m.poster_path" class="review-thumb" :src="img(m.poster_path,'w92')" loading="lazy" @click="openItem(m.id,m.media_type)">
@@ -804,8 +830,14 @@ canvas.chart{max-height:220px}
             </div>
           </div>
         </div>
+        <button v-if="!activityExpanded&&activityItems(activeFollow).length>4" class="btn ghost" style="font-size:13px" @click="activityExpanded=true">
+          Voir davantage
+        </button>
+        <button v-else-if="activityExpanded&&activityItems(activeFollow).length>4" class="btn ghost" style="font-size:13px" @click="activityExpanded=false">
+          Réduire
+        </button>
       </template>
-    </div>
+    </template>
   </template>
 </section>
 
@@ -1100,6 +1132,8 @@ createApp({
     const follows=ref([]);           // pseudos suivis
     const followData=ref({});        // pseudo -> {pseudo,data,loading,error}
     const activityInput=ref(''),activityError=ref(''),activityBusy=ref(false);
+    const activeFollow=ref('');       // pseudo consulté ('' = vue liste)
+    const activityExpanded=ref(false);
     let cloudLoading=false, cloudSaveT=null;
 
     const needAuth=computed(()=>!!apiKey.value && sbOn && !user.value);
@@ -1227,6 +1261,7 @@ createApp({
     function removeFollow(p){
       follows.value=follows.value.filter(x=>x!==p);
       const fd={...followData.value};delete fd[p];followData.value=fd;
+      if(activeFollow.value===p)activeFollow.value='';
     }
     // notations + critiques d'un utilisateur suivi (les plus récentes d'abord)
     function activityItems(p){
@@ -1234,6 +1269,10 @@ createApp({
       const w=(fd&&fd.data&&fd.data.watched)||{};
       return Object.values(w).filter(m=>m&&(m.rating>0||(m.note&&String(m.note).trim()))).reverse();
     }
+    // activité affichée : 4 récentes, étendue à 8 via « Voir davantage »
+    function shownActivity(p){return activityItems(p).slice(0,activityExpanded.value?8:4);}
+    function openFollow(p){activeFollow.value=p;activityExpanded.value=false;fetchFollow(p);}
+    function closeFollow(){activeFollow.value='';}
     watch(follows,v=>{Store.set('cine:follows',v);scheduleCloudSave();},{deep:true});
 
     async function apiFetch(path,params={}){
@@ -1708,6 +1747,7 @@ createApp({
       scrollActiveIntoView();
       if(t==='search'&&ratedCount.value>=1&&!suggestions.value.length&&!suggesting.value)buildSuggestions();
       if(t==='profile'){nextTick(renderCharts);if(!tmdbCompare.value.length)loadTmdbCompare();}
+      if(t==='activity'){activeFollow.value='';if(SB)loadAllFollows();}
     }
 
     // charts Chart.js
@@ -1798,6 +1838,7 @@ createApp({
       apiKey,keyInput,keyError,checkingKey,showSettings,saveKey,wipe,
       sbOn,user,needAuth,ready,authName,authPw,authMode,authError,authBusy,doAuth,signOut,syncState,displayName,
       follows,followData,activityInput,activityError,activityBusy,addFollow,removeFollow,activityItems,
+      activeFollow,activityExpanded,shownActivity,openFollow,closeFollow,
       fileInput,importMsg,importOk,exportData,triggerImport,importData,unsaved,
       tab,go,query,onType,clearSearch,searching,resultItems,resultPeople,searchFilter,countMovies,countTv,filteredResults,
       trending,trendingLoading,trendFilter,filteredTrending,countTrendMovies,countTrendTv,
