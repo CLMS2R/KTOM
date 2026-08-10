@@ -736,7 +736,7 @@ canvas.chart{max-height:220px}
             <span style="flex:1">{{d.name}}</span>
             <span style="color:var(--muted);font-size:12px">★ {{d.avg}} · {{d.count}} titre(s)</span>
           </li>
-          <li v-if="!topDirectors.length" style="color:var(--muted)">Ouvrez des fiches de vos films vus pour alimenter cette liste.</li>
+          <li v-if="!topDirectors.length" style="color:var(--muted)">Notez au moins 2 titres d'un même réalisateur (en ouvrant leurs fiches) pour qu'il apparaisse ici.</li>
         </ul>
       </div>
       <!-- acteurs préférés -->
@@ -748,7 +748,7 @@ canvas.chart{max-height:220px}
             <span style="flex:1">{{a.name}}</span>
             <span style="color:var(--muted);font-size:12px">★ {{a.avg}} · {{a.count}} film(s)</span>
           </li>
-          <li v-if="!topActors.length" style="color:var(--muted)">Ouvrez des fiches de vos films vus pour alimenter cette liste.</li>
+          <li v-if="!topActors.length" style="color:var(--muted)">Notez au moins 2 titres avec un même acteur (en ouvrant leurs fiches) pour qu'il apparaisse ici.</li>
         </ul>
       </div>
       <!-- compatibilité TMDB -->
@@ -1669,9 +1669,9 @@ createApp({
         s.total+=r;s.count++;actorStore.value={...actorStore.value,[a.name]:s};
       });
     }
-    const topDirectors=computed(()=>Object.values(directorStore.value).filter(d=>d.count>0)
+    const topDirectors=computed(()=>Object.values(directorStore.value).filter(d=>d.count>=2)
       .map(d=>({...d,avg:(d.total/d.count).toFixed(1)})).sort((a,b)=>b.total/b.count-a.total/a.count||b.count-a.count).slice(0,8));
-    const topActors=computed(()=>Object.values(actorStore.value).filter(a=>a.count>0)
+    const topActors=computed(()=>Object.values(actorStore.value).filter(a=>a.count>=2)
       .map(a=>({...a,avg:(a.total/a.count).toFixed(1)})).sort((a,b)=>b.total/b.count-a.total/a.count||b.count-a.count).slice(0,8));
 
     // notes récentes
