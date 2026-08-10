@@ -508,15 +508,15 @@ canvas.chart{max-height:220px}
          @drop="onDrop(entry.idx)" @dragend="onDragEnd"
          @touchstart="onTouchStart(entry.idx,$event)" @touchmove="onTouchMove($event)" @touchend="onTouchEnd"
          :class="{dragging:dragIndex===entry.idx,over:overIndex===entry.idx&&dragIndex!==entry.idx}">
-      <span class="rank">{{entry.idx+1}}</span>
+      <span class="rank">{{pos+1}}</span>
       <poster-card :item="entry.m" :listed="false" :show-score="false" @open="openItem(entry.m.id,entry.m.media_type)"></poster-card>
     </div>
   </div>
-  <div v-else-if="watchlistArr.length" class="empty">
+  <div v-else-if="watchlistGrid.length" class="empty">
     <div class="em">🔍</div><h3>Aucun titre dans ce filtre</h3>
     <p>Changez de filtre pour retrouver vos autres titres.</p>
   </div>
-  <div v-else class="empty">
+  <div v-else-if="!inProgressTv.length" class="empty">
     <div class="em">🎟️</div><h3>Votre liste est vide</h3>
     <p>Ajoutez des films ou séries depuis la recherche.</p>
     <button class="btn gold" style="margin-top:18px" @click="go('search')">Chercher un titre</button>
@@ -729,31 +729,31 @@ canvas.chart{max-height:220px}
               {{isListed(movie)?'✓ Dans ma liste':'🎟️ Ajouter à voir'}}
             </button>
             <button class="btn" :class="{rouge:isWatched(movie)}" @click="toggleWatched(movie)">
-              {{isWatched(movie)?'✓ Marqué comme vu':'👁 Marquer comme vu'}}
+              <template v-if="movie.media_type==='tv'">{{isWatched(movie)?'✓ Terminée (vue)':'✓ Marquer comme terminée'}}</template>
+              <template v-else>{{isWatched(movie)?'✓ Marqué comme vu':'👁 Marquer comme vu'}}</template>
             </button>
           </div>
-          <!-- note + comparaison TMDB -->
+          <!-- note + comparaison TMDB (uniquement quand c'est TERMINÉ / vu) -->
           <div class="rate-block" v-if="isWatched(movie)">
             <div class="rate-row">
               <span class="lbl">Votre note :</span>
               <star-rating class="lg" :model-value="myRating(movie)" @update:model-value="rate(movie,$event)"></star-rating>
               <button class="btn ghost" style="margin-left:auto;color:var(--rouge);border-color:var(--rouge);padding:7px 11px;font-size:13px" @click="removeWatched(movie)">Retirer</button>
             </div>
-            <!-- comparaison TMDB inline -->
             <div class="tmdb-cmp" v-if="myRating(movie)&&movie.vote_average">
               <span>vs TMDB :</span>
               <span style="color:var(--ivory)">vous {{(myRating(movie)*2).toFixed(1)}} — public {{movie.vote_average.toFixed(1)}}/10</span>
               <span class="diff" :class="tmdbDiffClass(movie)">{{tmdbDiffLabel(movie)}}</span>
             </div>
-            <!-- note personnelle / critique -->
             <div style="margin-top:12px">
               <p class="credit-label" style="margin-bottom:6px">Votre critique <span class="note-saved" v-if="noteSaved===keyOf(movie)">✓ enregistrée</span></p>
               <textarea class="note-area" placeholder="Écrivez votre avis, vos ressentis…" v-model="noteInput" @input="debounceSaveNote(movie)"></textarea>
             </div>
           </div>
-          <!-- progression séries -->
-          <div class="progress-block" v-if="isWatched(movie)&&movie.media_type==='tv'&&movie.seasons">
+          <!-- progression séries : rattachée à « À voir » (série en cours, pas encore terminée) -->
+          <div class="progress-block" v-if="movie.media_type==='tv'&&!isWatched(movie)&&movie.seasons">
             <h4>📺 Suivi de progression</h4>
+            <p v-if="!isListed(movie)" style="color:var(--muted);font-size:12px;margin:-4px 0 12px">Renseigner votre avancement ajoutera cette série à votre liste « À voir » (en cours).</p>
             <div class="season-row" v-for="s in regularSeasons" :key="s.season_number">
               <span class="slabel">Saison {{s.season_number}}</span>
               <div class="ep-counter">
@@ -764,6 +764,7 @@ canvas.chart{max-height:220px}
                 <div class="progress-fill" :class="{done:getSeenEps(movie,s.season_number)>=s.episode_count}" :style="{width:(getSeenEps(movie,s.season_number)/s.episode_count*100)+'%'}"></div>
               </div>
             </div>
+            <p v-if="tvPct(movie)>=100" style="color:var(--green);font-size:12.5px;margin:12px 0 0">✓ Vous avez tout vu ! Cliquez sur « Marquer comme terminée » pour la classer dans vos titres vus.</p>
           </div>
         </div>
       </div>
@@ -1225,24 +1226,32 @@ createApp({
     function removeWatched(m){const k=keyOf(m);const c={...watched.value};delete c[k];watched.value=c;flash('Retiré des vus.');}
     function rate(m,n){const k=keyOf(m);const cur=watched.value[k]||slim(m);watched.value={...watched.value,[k]:{...cur,rating:n}};}
 
-    // progression séries
-    function getSeenEps(m,sn){return watched.value[keyOf(m)]?.progress?.[sn]||0;}
+    // progression séries — désormais rattachée à « À voir » (en cours = pas encore terminé)
+    const progEntry=m=>watchlist.value[keyOf(m)]||watched.value[keyOf(m)]||null;
+    function getSeenEps(m,sn){return progEntry(m)?.progress?.[sn]||0;}
     function setSeenEps(m,sn,val,max){
-      const k=keyOf(m);const cur=watched.value[k];if(!cur)return;
-      const p={...(cur.progress||{}),[sn]:Math.min(max,Math.max(0,val))};
-      watched.value={...watched.value,[k]:{...cur,progress:p}};
+      const k=keyOf(m);
+      const src=watchlist.value[k]||watched.value[k]||slim(m);
+      const prog={...(src.progress||{}),[sn]:Math.min(max,Math.max(0,val))};
+      // une série partiellement regardée n'est pas « vue » : on la retire des vus si besoin
+      if(watched.value[k]){const w={...watched.value};delete w[k];watched.value=w;}
+      let entry={...src,progress:prog};
+      if(entry.order==null){const mx=Object.values(watchlist.value).reduce((a,x)=>Math.max(a,x.order??0),-1);entry.order=mx+1;}
+      watchlist.value={...watchlist.value,[k]:entry};
     }
     function tvPct(m){
-      const w=watched.value[keyOf(m)];if(!w||!m.number_of_episodes||!m.number_of_seasons)return 0;
-      const total=Object.values(w.progress||{}).reduce((s,v)=>s+v,0);
+      const e=progEntry(m);if(!e||!m.number_of_episodes)return 0;
+      const total=Object.values(e.progress||{}).reduce((s,v)=>s+v,0);
       return Math.round(total/m.number_of_episodes*100);
     }
     function tvProgressLabel(m){
-      const w=watched.value[keyOf(m)];if(!w)return'';
-      const total=Object.values(w.progress||{}).reduce((s,v)=>s+v,0);
+      const e=progEntry(m);if(!e)return'';
+      const total=Object.values(e.progress||{}).reduce((s,v)=>s+v,0);
       return total+' / '+(m.number_of_episodes||'?')+' épisodes vus ('+tvPct(m)+'%)';
     }
-    const inProgressTv=computed(()=>watchedArr.value.filter(m=>m.media_type==='tv'&&m.number_of_episodes&&tvPct(m)<100&&tvPct(m)>0));
+    // séries commencées mais non terminées (dans « À voir »)
+    const inProgressTv=computed(()=>watchlistArr.value.filter(m=>m.media_type==='tv'&&m.number_of_episodes&&tvPct(m)>0));
+    const isStartedTv=m=>m.media_type==='tv'&&tvPct(m)>0;
 
     // watchlist drag
     const dragIndex=ref(-1),overIndex=ref(-1);
@@ -1283,11 +1292,13 @@ createApp({
     }
 
     // filtre de la watchlist (par type) + vue avec index global conservé
+    // les séries « en cours » sont montrées à part, on les exclut de la grille à voir
     const watchlistType=ref('all');
-    const watchlistMovies=computed(()=>watchlistArr.value.filter(m=>m.media_type==='movie').length);
-    const watchlistTv=computed(()=>watchlistArr.value.filter(m=>m.media_type==='tv').length);
+    const watchlistGrid=computed(()=>watchlistArr.value.filter(m=>!isStartedTv(m)));
+    const watchlistMovies=computed(()=>watchlistGrid.value.filter(m=>m.media_type==='movie').length);
+    const watchlistTv=computed(()=>watchlistGrid.value.filter(m=>m.media_type==='tv').length);
     const watchlistView=computed(()=>{
-      const arr=watchlistArr.value.map((m,i)=>({m,idx:i}));
+      const arr=watchlistArr.value.map((m,i)=>({m,idx:i})).filter(e=>!isStartedTv(e.m));
       return watchlistType.value==='all'?arr:arr.filter(e=>e.m.media_type===watchlistType.value);
     });
 
@@ -1572,7 +1583,7 @@ createApp({
       watched,watchlist,watchedArr,watchlistArr,watchedSort,watchedType,watchedSorted,
       dragIndex,overIndex,onDragStart,onDragOver,onDrop,onDragEnd,
       onTouchStart,onTouchMove,onTouchEnd,
-      watchlistType,watchlistMovies,watchlistTv,watchlistView,
+      watchlistType,watchlistMovies,watchlistTv,watchlistView,watchlistGrid,
       countWatchedMovies,countWatchedTv,totalHours,
       isWatched,isListed,myRating,toggleList,toggleWatched,removeWatched,rate,
       getSeenEps,setSeenEps,tvPct,tvProgressLabel,inProgressTv,
