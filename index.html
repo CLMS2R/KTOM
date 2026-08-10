@@ -261,6 +261,12 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .prog-card{display:flex;gap:12px;align-items:center}
 .prog-thumb{width:44px;height:66px;flex-shrink:0;border-radius:6px;object-fit:cover;background:var(--panel-2)}
 .prog-thumb.noimg{display:grid;place-items:center;font-size:20px}
+.follow-add{display:flex;gap:10px;margin-bottom:12px;max-width:440px}
+.follow-add input{flex:1;background:var(--panel-2);border:1px solid var(--line);color:var(--ivory);padding:12px 14px;border-radius:10px;font-size:16px}
+.follow-add input:focus{outline:none;border-color:var(--gold-dim)}
+.activity-entry{margin-bottom:4px}
+.activity-msg{font-size:13px;color:var(--muted);margin:0 0 8px}
+.activity-msg b{color:var(--gold);font-weight:600}
 .profile-desc{color:var(--muted);font-size:14px;line-height:1.6;max-width:600px}
 /* sélecteur de bannière */
 .banner-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-top:16px}
@@ -354,6 +360,7 @@ canvas.chart{max-height:220px}
           ✓ Vus <span class="count" v-if="watchedArr.length">{{watchedArr.length}}</span>
         </button>
         <button class="tab" :class="{active:tab==='profile'}" @click="go('profile')">🎭 Mon profil</button>
+        <button v-if="sbOn" class="tab" :class="{active:tab==='activity'}" @click="go('activity')">👥 Activité</button>
       </nav>
       <button class="tabs-arrow right" v-show="canR" @click="scrollTabs(1)" aria-label="Onglets suivants">›</button>
     </div>
@@ -753,6 +760,55 @@ canvas.chart{max-height:220px}
   </template>
 </section>
 
+<!-- ===== ACTIVITÉ (suivi d'utilisateurs) ===== -->
+<section v-show="tab==='activity'" v-if="sbOn">
+  <div class="section-title">👥 Activité <span class="section-sub">suivez vos amis par leur pseudo</span></div>
+  <p style="color:var(--muted);font-size:13.5px;line-height:1.55;margin:-4px 0 16px;max-width:600px">
+    Saisissez le <b style="color:var(--ivory)">pseudo exact</b> d'une personne pour la suivre. Ses notes et critiques apparaîtront ici, mises à jour en temps réel.
+  </p>
+  <div class="follow-add">
+    <input v-model.trim="activityInput" @keyup.enter="addFollow" placeholder="Pseudo exact (ex. marc)" autocapitalize="none" spellcheck="false">
+    <button class="btn gold" @click="addFollow" :disabled="activityBusy">{{activityBusy?'…':'Suivre'}}</button>
+  </div>
+  <p v-if="activityError" style="color:var(--rouge);font-size:13px;margin:0 0 10px">{{activityError}}</p>
+
+  <div v-if="!follows.length" class="empty">
+    <div class="em">👥</div><h3>Vous ne suivez personne</h3>
+    <p>Ajoutez le pseudo d'un ami ci-dessus pour suivre ses notes et critiques.</p>
+  </div>
+  <template v-else>
+    <div class="db-card" v-for="p in follows" :key="p" style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <h3 style="margin:0;flex:1">@{{p}}</h3>
+        <button class="btn ghost" style="font-size:12.5px;padding:6px 12px;color:var(--rouge);border-color:var(--rouge)" @click="removeFollow(p)">Ne plus suivre</button>
+      </div>
+      <div v-if="followData[p]&&followData[p].loading" style="color:var(--muted);font-size:13px">Chargement…</div>
+      <div v-else-if="followData[p]&&followData[p].error" style="color:var(--muted);font-size:13px">Activité indisponible pour le moment.</div>
+      <template v-else>
+        <div v-if="!activityItems(p).length" style="color:var(--muted);font-size:13px">Aucune note ni critique pour l'instant.</div>
+        <div v-for="m in activityItems(p)" :key="m.media_type+m.id" class="activity-entry">
+          <p class="activity-msg">
+            <template v-if="m.note&&m.note.trim()"><b>{{p}}</b> a formulé la critique suivante :</template>
+            <template v-else><b>{{p}}</b> a attribué la note de :</template>
+          </p>
+          <div class="review-item">
+            <img v-if="m.poster_path" class="review-thumb" :src="img(m.poster_path,'w92')" loading="lazy" @click="openItem(m.id,m.media_type)">
+            <div v-else class="review-thumb noimg">🎬</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13.5px;margin-bottom:5px">{{m.title}}</div>
+              <div v-if="m.rating>0" style="margin-bottom:6px;display:flex;align-items:center;gap:8px">
+                <star-rating :model-value="m.rating" readonly></star-rating>
+                <span style="font-size:12px;color:var(--gold)">{{m.rating}} / 5</span>
+              </div>
+              <div v-if="m.note&&m.note.trim()" style="font-size:13px;color:var(--muted);font-style:italic;line-height:1.5">« {{m.note}} »</div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+</section>
+
 </template><!-- /apiKey -->
 </main>
 
@@ -1040,6 +1096,10 @@ createApp({
     const authName=ref(''),authPw=ref(''),authMode=ref('signin'),authError=ref(''),authBusy=ref(false);
     const syncState=ref(sbOn?'idle':'off');   // off | idle | saving | synced | error
     const cloudReady=ref(false);
+    // --- suivi d'activité (following) ---
+    const follows=ref([]);           // pseudos suivis
+    const followData=ref({});        // pseudo -> {pseudo,data,loading,error}
+    const activityInput=ref(''),activityError=ref(''),activityBusy=ref(false);
     let cloudLoading=false, cloudSaveT=null;
 
     const needAuth=computed(()=>!!apiKey.value && sbOn && !user.value);
@@ -1082,8 +1142,9 @@ createApp({
       watched.value={};watchlist.value={};
       actorStore.value={};directorStore.value={};
       suggestions.value=[];tmdbCompare.value=[];bannerKey.value='';
+      follows.value=[];followData.value={};
       Store.set('cine:watched',{});Store.set('cine:watchlist',{});
-      Store.set('cine:actors',{});Store.set('cine:directors',{});Store.set('cine:banner','');
+      Store.set('cine:actors',{});Store.set('cine:directors',{});Store.set('cine:banner','');Store.set('cine:follows',[]);
       flash('Déconnecté.');
     }
 
@@ -1099,6 +1160,7 @@ createApp({
         watched.value=migrate(cloud.watched||{});
         watchlist.value=migrate(cloud.watchlist||{});
         bannerKey.value=cloud.banner||'';
+        follows.value=Array.isArray(cloud.follows)?cloud.follows:[];
         cloudReady.value=true;
         if(!data)await cloudSave();   // première connexion : on crée la ligne cloud
         else syncState.value='synced';
@@ -1106,6 +1168,7 @@ createApp({
         // suggestions par défaut une fois les données cloud chargées
         suggestions.value=[];
         if(ratedCount.value>=1&&!suggesting.value)buildSuggestions();
+        loadAllFollows();             // charge l'activité des personnes suivies
       }catch(e){syncState.value='error';cloudReady.value=true;}
       finally{cloudLoading=false;}
     }
@@ -1115,7 +1178,8 @@ createApp({
       try{
         const {error}=await SB.from('saves').upsert({
           user_id:user.value.id,
-          data:{watched:watched.value,watchlist:watchlist.value,banner:bannerKey.value},
+          pseudo:normPseudo(displayName.value),
+          data:{watched:watched.value,watchlist:watchlist.value,banner:bannerKey.value,follows:follows.value},
           updated_at:new Date().toISOString()
         });
         syncState.value=error?'error':'synced';
@@ -1126,6 +1190,51 @@ createApp({
       clearTimeout(cloudSaveT);
       cloudSaveT=setTimeout(cloudSave,1200);
     }
+
+    // --- suivi d'utilisateurs par pseudo ---
+    function normPseudo(p){return (p||'').toLowerCase().replace(/[^a-z0-9._-]/g,'');}
+    async function fetchFollow(p){
+      if(!SB)return false;
+      followData.value={...followData.value,[p]:{pseudo:p,data:(followData.value[p]&&followData.value[p].data)||{},loading:true,error:false}};
+      try{
+        const {data,error}=await SB.from('saves').select('data,pseudo').eq('pseudo',p).maybeSingle();
+        if(error)throw error;
+        followData.value={...followData.value,[p]:{pseudo:p,data:(data&&data.data)||{},loading:false,error:!data}};
+        return !!data;
+      }catch(e){
+        followData.value={...followData.value,[p]:{pseudo:p,data:{},loading:false,error:true}};
+        return false;
+      }
+    }
+    function loadAllFollows(){follows.value.forEach(p=>fetchFollow(p));}
+    async function addFollow(){
+      activityError.value='';
+      const p=normPseudo(activityInput.value);
+      if(!p){activityError.value='Saisissez un pseudo.';return;}
+      if(p===normPseudo(displayName.value)){activityError.value='C\'est vous !';return;}
+      if(follows.value.includes(p)){activityError.value='Vous suivez déjà '+p+'.';return;}
+      activityBusy.value=true;
+      const ok=await fetchFollow(p);
+      activityBusy.value=false;
+      if(!ok){
+        activityError.value='Pseudo introuvable. La personne doit s\'être connectée au moins une fois.';
+        const fd={...followData.value};delete fd[p];followData.value=fd;return;
+      }
+      follows.value=[...follows.value,p];
+      activityInput.value='';
+      flash('Vous suivez '+p+' 👥');
+    }
+    function removeFollow(p){
+      follows.value=follows.value.filter(x=>x!==p);
+      const fd={...followData.value};delete fd[p];followData.value=fd;
+    }
+    // notations + critiques d'un utilisateur suivi (les plus récentes d'abord)
+    function activityItems(p){
+      const fd=followData.value[p];
+      const w=(fd&&fd.data&&fd.data.watched)||{};
+      return Object.values(w).filter(m=>m&&(m.rating>0||(m.note&&String(m.note).trim()))).reverse();
+    }
+    watch(follows,v=>{Store.set('cine:follows',v);scheduleCloudSave();},{deep:true});
 
     async function apiFetch(path,params={}){
       const usp=new URLSearchParams({api_key:apiKey.value,language:'fr-FR',...params});
@@ -1656,6 +1765,7 @@ createApp({
       actorStore.value=await Store.get('cine:actors',{});
       directorStore.value=await Store.get('cine:directors',{});
       bannerKey.value=await Store.get('cine:banner','');
+      follows.value=await Store.get('cine:follows',[]);
       nextTick(updateArrows);
       window.addEventListener('resize',updateArrows);
       nextTick(()=>{loaded.value=true;});   // à partir d'ici, tout changement compte comme "non exporté"
@@ -1671,12 +1781,23 @@ createApp({
         });
         try{const {data}=await SB.auth.getSession();user.value=data.session?data.session.user:null;}catch(e){}
         if(user.value&&!cloudReady.value)cloudLoad();
+        // temps réel : rafraîchit l'activité d'une personne suivie dès qu'elle change
+        try{
+          SB.channel('activite-saves')
+            .on('postgres_changes',{event:'*',schema:'public',table:'saves'},payload=>{
+              const row=payload.new;
+              if(row&&row.pseudo&&follows.value.includes(row.pseudo)){
+                followData.value={...followData.value,[row.pseudo]:{pseudo:row.pseudo,data:row.data||{},loading:false,error:false}};
+              }
+            }).subscribe();
+        }catch(e){}
       }
     });
 
     return{
       apiKey,keyInput,keyError,checkingKey,showSettings,saveKey,wipe,
       sbOn,user,needAuth,ready,authName,authPw,authMode,authError,authBusy,doAuth,signOut,syncState,displayName,
+      follows,followData,activityInput,activityError,activityBusy,addFollow,removeFollow,activityItems,
       fileInput,importMsg,importOk,exportData,triggerImport,importData,unsaved,
       tab,go,query,onType,clearSearch,searching,resultItems,resultPeople,searchFilter,countMovies,countTv,filteredResults,
       trending,trendingLoading,trendFilter,filteredTrending,countTrendMovies,countTrendTv,
