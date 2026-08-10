@@ -352,10 +352,10 @@ canvas.chart{max-height:220px}
 <div v-else-if="needAuth" class="card">
   <h2>{{authMode==='signup'?'Créer un compte 🎬':'Connexion 🎬'}}</h2>
   <p>Connectez-vous pour retrouver et synchroniser vos films, notes et listes sur tous vos appareils.</p>
-  <label for="ae">Email</label>
-  <input id="ae" type="email" v-model.trim="authEmail" @keyup.enter="doAuth" autocomplete="email" placeholder="vous@exemple.com">
+  <label for="ae">Pseudo</label>
+  <input id="ae" v-model.trim="authName" @keyup.enter="doAuth" autocomplete="username" placeholder="ex. marc" autocapitalize="none" spellcheck="false">
   <label for="ap">Mot de passe</label>
-  <input id="ap" type="password" v-model="authPw" @keyup.enter="doAuth" autocomplete="current-password" placeholder="••••••••">
+  <input id="ap" type="password" v-model="authPw" @keyup.enter="doAuth" :autocomplete="authMode==='signup'?'new-password':'current-password'" placeholder="••••••••">
   <p v-if="authError" style="color:var(--rouge);margin-top:10px;font-size:13.5px">{{authError}}</p>
   <div style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <button class="btn gold" @click="doAuth" :disabled="authBusy">
@@ -365,6 +365,7 @@ canvas.chart{max-height:220px}
       {{authMode==='signup'?"J'ai déjà un compte":'Créer un compte'}}
     </button>
   </div>
+  <p v-if="authMode==='signup'" style="color:var(--muted);font-size:12px;margin-top:14px;line-height:1.5">Choisissez un pseudo unique et un mot de passe d'au moins 6 caractères. Notez-les bien : sans email, un mot de passe oublié ne peut pas être récupéré automatiquement.</p>
 </div>
 
 <!-- RÉGLAGES -->
@@ -375,7 +376,7 @@ canvas.chart{max-height:220px}
       <h2 style="font-family:'Oswald';letter-spacing:.05em;margin-top:0">Réglages</h2>
       <template v-if="sbOn&&user">
         <label class="credit-label" style="margin-top:6px">Compte</label>
-        <p style="color:var(--ivory);font-size:13.5px;margin:4px 0 4px">{{user.email}}</p>
+        <p style="color:var(--ivory);font-size:13.5px;margin:4px 0 4px">{{displayName}}</p>
         <p style="font-size:12px;margin:0 0 12px" :style="{color:syncState==='error'?'var(--rouge)':'var(--green)'}">
           {{syncState==='saving'?'⟳ Synchronisation…':syncState==='error'?'⚠ Hors ligne — sauvegarde locale active':'✓ Données synchronisées dans le cloud'}}
         </p>
@@ -958,7 +959,7 @@ createApp({
     // --- authentification & synchro cloud (Supabase) ---
     const sbOn=!!SB;
     const user=ref(null);
-    const authEmail=ref(''),authPw=ref(''),authMode=ref('signin'),authError=ref(''),authBusy=ref(false);
+    const authName=ref(''),authPw=ref(''),authMode=ref('signin'),authError=ref(''),authBusy=ref(false);
     const syncState=ref(sbOn?'idle':'off');   // off | idle | saving | synced | error
     const cloudReady=ref(false);
     let cloudLoading=false, cloudSaveT=null;
@@ -966,22 +967,31 @@ createApp({
     const needAuth=computed(()=>!!apiKey.value && sbOn && !user.value);
     const ready=computed(()=>!!apiKey.value && (!sbOn || !!user.value));
 
+    // le pseudo est transformé en email interne (jamais montré à l'utilisateur)
+    const PSEUDO_DOMAIN='cinetheque.local';
+    function pseudoToEmail(p){return p.toLowerCase().replace(/[^a-z0-9._-]/g,'')+'@'+PSEUDO_DOMAIN;}
+    // le pseudo affiché = partie avant @ de l'email interne
+    const displayName=computed(()=>{const e=user.value?.email||'';return e.split('@')[0]||'—';});
+
     function authErrFr(msg){
       const m=(msg||'').toLowerCase();
-      if(m.includes('invalid login'))return 'Email ou mot de passe incorrect.';
-      if(m.includes('already registered')||m.includes('already exists'))return 'Un compte existe déjà avec cet email.';
+      if(m.includes('invalid login'))return 'Pseudo ou mot de passe incorrect.';
+      if(m.includes('already registered')||m.includes('already exists')||m.includes('user already'))return 'Ce pseudo est déjà pris.';
       if(m.includes('password')&&m.includes('6'))return 'Le mot de passe doit faire au moins 6 caractères.';
-      if(m.includes('email'))return 'Adresse email invalide.';
+      if(m.includes('email')&&m.includes('invalid'))return 'Pseudo invalide (lettres, chiffres, . _ - uniquement).';
       return msg||'Erreur d\'authentification.';
     }
     async function doAuth(){
       authError.value='';
-      if(!authEmail.value||!authPw.value){authError.value='Email et mot de passe requis.';return;}
+      const pseudo=authName.value.trim();
+      if(!pseudo||!authPw.value){authError.value='Pseudo et mot de passe requis.';return;}
+      if(!/[a-z0-9]/i.test(pseudo)){authError.value='Le pseudo doit contenir au moins une lettre ou un chiffre.';return;}
+      const email=pseudoToEmail(pseudo);
       authBusy.value=true;
       try{
         const res = authMode.value==='signup'
-          ? await SB.auth.signUp({email:authEmail.value,password:authPw.value})
-          : await SB.auth.signInWithPassword({email:authEmail.value,password:authPw.value});
+          ? await SB.auth.signUp({email,password:authPw.value})
+          : await SB.auth.signInWithPassword({email,password:authPw.value});
         if(res.error){authError.value=authErrFr(res.error.message);}
         else{authPw.value='';}   // le reste est géré par onAuthStateChange
       }catch(e){authError.value='Connexion au service impossible.';}
@@ -1563,7 +1573,7 @@ createApp({
 
     return{
       apiKey,keyInput,keyError,checkingKey,showSettings,saveKey,wipe,
-      sbOn,user,needAuth,ready,authEmail,authPw,authMode,authError,authBusy,doAuth,signOut,syncState,
+      sbOn,user,needAuth,ready,authName,authPw,authMode,authError,authBusy,doAuth,signOut,syncState,displayName,
       fileInput,importMsg,importOk,exportData,triggerImport,importData,unsaved,
       tab,go,query,onType,clearSearch,searching,resultItems,resultPeople,searchFilter,countMovies,countTv,filteredResults,
       trending,trendingLoading,trendFilter,filteredTrending,countTrendMovies,countTrendTv,
