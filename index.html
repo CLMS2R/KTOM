@@ -729,7 +729,7 @@ canvas.chart{max-height:220px}
     <div class="db-grid">
       <!-- réalisateurs préférés -->
       <div class="db-card">
-        <h3>🎬 Réalisateurs / Créateurs favoris</h3>
+        <h3>🎬 Réalisateurs / Créateurs favoris <span v-if="favBusy" style="color:var(--muted);font-size:12px;font-weight:400">⟳ analyse…</span></h3>
         <ul class="rank-list">
           <li v-for="(d,i) in topDirectors" :key="d.name">
             <span class="rank-num">{{i+1}}</span>
@@ -741,7 +741,7 @@ canvas.chart{max-height:220px}
       </div>
       <!-- acteurs préférés -->
       <div class="db-card">
-        <h3>🌟 Acteurs favoris</h3>
+        <h3>🌟 Acteurs favoris <span v-if="favBusy" style="color:var(--muted);font-size:12px;font-weight:400">⟳ analyse…</span></h3>
         <ul class="rank-list">
           <li v-for="(a,i) in topActors" :key="a.name">
             <span class="rank-num">{{i+1}}</span>
@@ -1406,7 +1406,7 @@ createApp({
         const k=keyOf(d);
         if(watched.value[k])noteInput.value=watched.value[k].note||'';
         // enregistrer acteurs/réalisateurs pour le profil
-        recordCastCrew(d,crew.value,cast.value);
+        recordCastCrew(d);
       }catch(e){flash("Impossible d'ouvrir la fiche.");movie.value=null;}
       finally{movieLoading.value=false;}
     }
@@ -1655,19 +1655,52 @@ createApp({
 
     // acteurs / réalisateurs enregistrés lors des visionnages
     const actorStore=ref({}),directorStore=ref({});
-    function recordCastCrew(m,crewArr,castArr){
-      const k=keyOf(m);const r=watched.value[k]?.rating||0;if(!r)return;
-      // réalisateurs
-      const dirs=m.media_type==='tv'?(m.created_by||[]):crewArr.filter(c=>c.job==='Director');
-      dirs.forEach(d=>{
-        const s=directorStore.value[d.name]||{name:d.name,total:0,count:0};
-        s.total+=r;s.count++;directorStore.value={...directorStore.value,[d.name]:s};
-      });
-      // acteurs
-      castArr.slice(0,8).forEach(a=>{
-        const s=actorStore.value[a.name]||{name:a.name,total:0,count:0};
-        s.total+=r;s.count++;actorStore.value={...actorStore.value,[a.name]:s};
-      });
+    const titleCredits=ref({});      // clé titre -> {dir:[noms], act:[noms]}
+    const favBusy=ref(false);
+    function creditsFrom(d){
+      const type=d.media_type||(d.first_air_date?'tv':'movie');
+      const crew=(d.credits&&d.credits.crew)||[];
+      const cast=(d.credits&&d.credits.cast)||[];
+      const dir=type==='tv'?((d.created_by||[]).map(x=>x.name)):crew.filter(c=>c.job==='Director').map(c=>c.name);
+      const act=cast.slice(0,8).map(c=>c.name);
+      return{dir:[...new Set(dir.filter(Boolean))],act:[...new Set(act.filter(Boolean))]};
+    }
+    // reconstruit les classements à partir du cache + des notes actuelles
+    function rebuildAggregates(){
+      const dS={},aS={};
+      for(const [k,cr] of Object.entries(titleCredits.value)){
+        const w=watched.value[k];const r=(w&&w.rating>0)?w.rating:0;if(!r)continue;
+        (cr.dir||[]).forEach(n=>{const s=dS[n]||{name:n,total:0,count:0};s.total+=r;s.count++;dS[n]=s;});
+        (cr.act||[]).forEach(n=>{const s=aS[n]||{name:n,total:0,count:0};s.total+=r;s.count++;aS[n]=s;});
+      }
+      directorStore.value=dS;actorStore.value=aS;
+    }
+    // met en cache l'équipe d'un titre ouvert
+    function recordCastCrew(d){
+      titleCredits.value={...titleCredits.value,[keyOf(d)]:creditsFrom(d)};
+      Store.set('cine:credits',titleCredits.value);
+      rebuildAggregates();
+    }
+    // reconstruit les favoris : récupère l'équipe des titres notés manquants, puis agrège
+    async function rebuildFavorites(){
+      if(favBusy.value||!apiKey.value)return;
+      const rated=watchedArr.value.filter(m=>m.rating>0);
+      const missing=rated.filter(m=>!titleCredits.value[keyOf(m)]);
+      if(missing.length){
+        favBusy.value=true;
+        try{
+          for(const m of missing){
+            try{
+              const type=m.media_type||'movie';
+              const d=await apiFetch('/'+type+'/'+m.id,{append_to_response:'credits'});
+              d.media_type=type;
+              titleCredits.value={...titleCredits.value,[keyOf(m)]:creditsFrom(d)};
+            }catch(e){/* fiche en échec ignorée */}
+          }
+          Store.set('cine:credits',titleCredits.value);
+        }finally{favBusy.value=false;}
+      }
+      rebuildAggregates();
     }
     const topDirectors=computed(()=>Object.values(directorStore.value).filter(d=>d.count>=2)
       .map(d=>({...d,avg:(d.total/d.count).toFixed(1)})).sort((a,b)=>b.total/b.count-a.total/a.count||b.count-a.count).slice(0,8));
@@ -1764,7 +1797,7 @@ createApp({
       tab.value=t;if(t!=='search')person.value=null;
       scrollActiveIntoView();
       if(t==='search'&&ratedCount.value>=1&&!suggestions.value.length&&!suggesting.value)buildSuggestions();
-      if(t==='profile'){nextTick(renderCharts);if(!tmdbCompare.value.length)loadTmdbCompare();}
+      if(t==='profile'){nextTick(renderCharts);if(!tmdbCompare.value.length)loadTmdbCompare();rebuildFavorites();}
       if(t==='activity'){activeFollow.value='';if(SB)loadAllFollows();}
     }
 
@@ -1810,8 +1843,7 @@ createApp({
     const loaded=ref(false);   // évite de marquer "non sauvegardé" pendant le chargement initial
     watch(watched,v=>{Store.set('cine:watched',v);if(loaded.value)unsaved.value=true;scheduleCloudSave();},{deep:true});
     watch(watchlist,v=>{Store.set('cine:watchlist',v);if(loaded.value)unsaved.value=true;scheduleCloudSave();},{deep:true});
-    watch(actorStore,v=>Store.set('cine:actors',v),{deep:true});
-    watch(directorStore,v=>Store.set('cine:directors',v),{deep:true});
+    watch(titleCredits,v=>Store.set('cine:credits',v),{deep:true});
 
     onMounted(async()=>{
       apiKey.value=await Store.get('cine:key',DEFAULT_API_KEY);keyInput.value=apiKey.value;
@@ -1820,8 +1852,8 @@ createApp({
       const vals=Object.values(wl);
       if(vals.length&&vals.some(x=>x.order==null)){const map={};vals.slice().reverse().forEach((m,i)=>{map[keyOf(m)]={...m,order:i};});wl=map;}
       watchlist.value=wl;
-      actorStore.value=await Store.get('cine:actors',{});
-      directorStore.value=await Store.get('cine:directors',{});
+      titleCredits.value=await Store.get('cine:credits',{});
+      rebuildAggregates();
       bannerKey.value=await Store.get('cine:banner','');
       follows.value=await Store.get('cine:follows',[]);
       nextTick(updateArrows);
@@ -1873,7 +1905,7 @@ createApp({
       ratedCount,avgRating,topGenreName,genreScores,
       topRated,topGenresByAvg,decenniePref,ratingStyle,
       profile,spriteDef,
-      topDirectors,topActors,
+      topDirectors,topActors,favBusy,
       bannerPoster,showBannerPicker,setBanner,clearBanner,bannerKey,
       reviewsExpanded,allNotes,shownNotes,
       tmdbCompare,loadingCmp,loadTmdbCompare,
