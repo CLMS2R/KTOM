@@ -285,6 +285,9 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .fdh-back{font-size:13px;margin-bottom:16px}
 .fdh-id{display:flex;align-items:center;gap:12px}
 .fdh-id h2{font-family:'Oswald';letter-spacing:.04em;margin:0;flex:1;min-width:0;font-size:24px}
+/* zone d'activité : fond foncé opaque pour la lisibilité (masque le réseau de points) */
+.activity-feed{background:rgba(16,13,12,.94);border:1px solid var(--line);border-radius:14px;padding:18px 18px 6px;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+.activity-feed .review-item:last-of-type{border-bottom:none;margin-bottom:8px}
 .profile-desc{color:var(--muted);font-size:14px;line-height:1.6;max-width:600px}
 /* sélecteur de bannière */
 .banner-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-top:16px}
@@ -822,7 +825,7 @@ canvas.chart{max-height:220px}
     <div v-else-if="followData[activeFollow]&&followData[activeFollow].error" class="empty"><div class="em">📡</div><h3>Activité indisponible</h3><p>Impossible de récupérer l'activité pour le moment.</p></div>
     <template v-else>
       <div v-if="!activityItems(activeFollow).length" class="empty"><div class="em">🎬</div><h3>Aucune activité</h3><p>Cette personne n'a pas encore noté ni critiqué de titre.</p></div>
-      <template v-else>
+      <div v-else class="activity-feed">
         <div v-for="m in shownActivity(activeFollow)" :key="m.media_type+m.id" class="activity-entry">
           <p class="activity-msg">
             <template v-if="m.note&&m.note.trim()"><b>{{activeFollow}}</b> a formulé la critique suivante :</template>
@@ -847,7 +850,7 @@ canvas.chart{max-height:220px}
         <button v-else-if="activityExpanded&&activityItems(activeFollow).length>4" class="btn ghost" style="font-size:13px" @click="activityExpanded=false">
           Réduire
         </button>
-      </template>
+      </div>
     </template>
   </template>
 </section>
