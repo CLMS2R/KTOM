@@ -272,8 +272,8 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .follow-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;cursor:pointer;
   background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;transition:.15s}
 .follow-row:hover{border-color:var(--gold-dim);transform:translateY(-1px)}
-.follow-ava{width:40px;height:40px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;
-  background:var(--panel-2);border:2px solid var(--gold);color:var(--gold);font-family:'Oswald';font-size:19px;font-weight:600}
+.follow-ava{width:40px;height:40px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;overflow:hidden;
+  background:var(--panel-2);border:2px solid var(--gold);color:var(--gold);font-family:'Oswald';font-size:19px;font-weight:600;image-rendering:pixelated}
 .follow-ava.lg{width:52px;height:52px;font-size:24px}
 .follow-name{flex:1;font-family:'Oswald';font-size:18px;letter-spacing:.03em;min-width:0}
 .follow-count{color:var(--muted);font-size:12.5px}
@@ -791,7 +791,7 @@ canvas.chart{max-height:220px}
     </div>
     <div v-else class="follow-list">
       <button class="follow-row" v-for="p in follows" :key="p" @click="openFollow(p)">
-        <span class="follow-ava">{{p.charAt(0).toUpperCase()}}</span>
+        <span class="follow-ava" :style="{borderColor:followArchetype(p).color}"><pixel-sprite :def="followArchetype(p).def" :size="30"></pixel-sprite></span>
         <span class="follow-name">@{{p}}</span>
         <span class="follow-count" v-if="followData[p]&&!followData[p].loading&&!followData[p].error">{{activityItems(p).length}} activité(s)</span>
         <span class="follow-go">›</span>
@@ -803,7 +803,7 @@ canvas.chart{max-height:220px}
   <template v-else>
     <button class="btn ghost" style="font-size:13px;margin-bottom:16px" @click="closeFollow">‹ Retour à mes suivis</button>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
-      <span class="follow-ava lg">{{activeFollow.charAt(0).toUpperCase()}}</span>
+      <span class="follow-ava lg" :style="{borderColor:followArchetype(activeFollow).color}"><pixel-sprite :def="followArchetype(activeFollow).def" :size="40"></pixel-sprite></span>
       <h2 style="font-family:'Oswald';letter-spacing:.04em;margin:0;flex:1">@{{activeFollow}}</h2>
       <button class="btn ghost" style="font-size:12.5px;padding:6px 12px;color:var(--rouge);border-color:var(--rouge)" @click="removeFollow(activeFollow)">Ne plus suivre</button>
     </div>
@@ -1273,6 +1273,24 @@ createApp({
     function shownActivity(p){return activityItems(p).slice(0,activityExpanded.value?8:4);}
     function openFollow(p){activeFollow.value=p;activityExpanded.value=false;fetchFollow(p);}
     function closeFollow(){activeFollow.value='';}
+    // archétype (sprite + couleur) déduit des notes d'un utilisateur suivi
+    function archetypeOf(wmap){
+      const r=Object.values(wmap||{}).filter(m=>m&&m.rating>0);
+      if(r.length<3)return{sprite:'apprenti',color:'#9a8f82'};
+      const avg=r.reduce((s,m)=>s+m.rating,0)/r.length;
+      const pctLow=r.filter(m=>m.rating<=2).length/r.length;
+      const pctHigh=r.filter(m=>m.rating>=4.5).length/r.length;
+      if(avg<2.5||pctLow>.4)return{sprite:'boucher',color:'#c8483d'};
+      if(avg<3.1)return{sprite:'inquisiteur',color:'#b8863a'};
+      if(avg>4.4||pctHigh>.55)return{sprite:'paladin',color:'#e7b24c'};
+      if(avg>3.9)return{sprite:'barde',color:'#7fae6a'};
+      return{sprite:'archimage',color:'#8a6ad4'};
+    }
+    function followArchetype(p){
+      const fd=followData.value[p];
+      const a=archetypeOf(fd&&fd.data&&fd.data.watched);
+      return{def:SPRITES[a.sprite]||SPRITES.apprenti,color:a.color};
+    }
     watch(follows,v=>{Store.set('cine:follows',v);scheduleCloudSave();},{deep:true});
 
     async function apiFetch(path,params={}){
@@ -1838,7 +1856,7 @@ createApp({
       apiKey,keyInput,keyError,checkingKey,showSettings,saveKey,wipe,
       sbOn,user,needAuth,ready,authName,authPw,authMode,authError,authBusy,doAuth,signOut,syncState,displayName,
       follows,followData,activityInput,activityError,activityBusy,addFollow,removeFollow,activityItems,
-      activeFollow,activityExpanded,shownActivity,openFollow,closeFollow,
+      activeFollow,activityExpanded,shownActivity,openFollow,closeFollow,followArchetype,
       fileInput,importMsg,importOk,exportData,triggerImport,importData,unsaved,
       tab,go,query,onType,clearSearch,searching,resultItems,resultPeople,searchFilter,countMovies,countTv,filteredResults,
       trending,trendingLoading,trendFilter,filteredTrending,countTrendMovies,countTrendTv,
