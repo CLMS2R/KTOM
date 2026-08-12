@@ -626,9 +626,9 @@ canvas.chart{max-height:220px}
     </div>
   </div>
 
-  <div class="section-title">Ma liste « à voir » <span class="section-sub">{{watchlistArr.length}} titre(s)</span></div>
-  <div class="filterrow" v-if="watchlistArr.length">
-    <span class="chip" :class="{on:watchlistType==='all'}" @click="watchlistType='all'">Tout ({{watchlistArr.length}})</span>
+  <div class="section-title">Ma liste « à voir » <span class="section-sub">{{watchlistToWatch}} titre(s)</span></div>
+  <div class="filterrow" v-if="watchlistToWatch">
+    <span class="chip" :class="{on:watchlistType==='all'}" @click="watchlistType='all'">Tout ({{watchlistToWatch}})</span>
     <span class="chip" :class="{on:watchlistType==='movie'}" @click="watchlistType='movie'">Films ({{watchlistMovies}})</span>
     <span class="chip" :class="{on:watchlistType==='tv'}" @click="watchlistType='tv'">Séries ({{watchlistTv}})</span>
   </div>
@@ -1639,8 +1639,9 @@ createApp({
       return seenEpisodesTotal(m)+' / '+(m.number_of_episodes||'?')+' épisodes vus ('+tvPct(m)+'%)';
     }
     // séries commencées mais non terminées (dans « À voir »)
-    const inProgressTv=computed(()=>watchlistArr.value.filter(m=>m.media_type==='tv'&&m.number_of_episodes&&tvPct(m)>0));
-    const isStartedTv=m=>m.media_type==='tv'&&tvPct(m)>0;
+    // « commencée » = au moins un épisode vu (peu importe le mode de suivi et le total)
+    const isStartedTv=m=>m.media_type==='tv'&&seenEpisodesTotal(m)>0;
+    const inProgressTv=computed(()=>watchlistArr.value.filter(isStartedTv));
 
     // watchlist drag
     const dragIndex=ref(-1),overIndex=ref(-1);
@@ -1684,6 +1685,7 @@ createApp({
     // les séries « en cours » sont montrées à part, on les exclut de la grille à voir
     const watchlistType=ref('all');
     const watchlistGrid=computed(()=>watchlistArr.value.filter(m=>!isStartedTv(m)));
+    const watchlistToWatch=computed(()=>watchlistGrid.value.length);   // titres pas encore commencés
     const watchlistMovies=computed(()=>watchlistGrid.value.filter(m=>m.media_type==='movie').length);
     const watchlistTv=computed(()=>watchlistGrid.value.filter(m=>m.media_type==='tv').length);
     const watchlistView=computed(()=>{
@@ -2038,7 +2040,7 @@ createApp({
       watched,watchlist,watchedArr,watchlistArr,watchedSort,watchedType,watchedSorted,
       dragIndex,overIndex,onDragStart,onDragOver,onDrop,onDragEnd,
       onTouchStart,onTouchMove,onTouchEnd,
-      watchlistType,watchlistMovies,watchlistTv,watchlistView,watchlistGrid,
+      watchlistType,watchlistMovies,watchlistTv,watchlistView,watchlistGrid,watchlistToWatch,
       countWatchedMovies,countWatchedTv,totalHours,
       isWatched,isListed,myRating,toggleList,toggleWatched,removeWatched,rate,
       getSeenEps,setSeenEps,tvPct,tvProgressLabel,inProgressTv,
