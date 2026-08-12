@@ -203,6 +203,30 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .progress-bar{flex:1;height:6px;background:var(--line);border-radius:10px;overflow:hidden;min-width:80px}
 .progress-fill{height:100%;background:var(--gold);border-radius:10px;transition:.3s}
 .progress-fill.done{background:var(--green)}
+/* choix du mode de suivi */
+.prog-modes{display:inline-flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px;margin:-2px 0 14px}
+.prog-mode-btn{background:none;border:0;color:var(--muted);cursor:pointer;font-family:'Oswald';text-transform:uppercase;
+  letter-spacing:.06em;font-size:12px;font-weight:500;padding:6px 12px;border-radius:8px;transition:.15s}
+.prog-mode-btn:hover{color:var(--ivory)}
+.prog-mode-btn.on{background:var(--gold);color:var(--ink)}
+.prog-hint{color:var(--muted);font-size:12px;line-height:1.5;margin:-4px 0 12px}
+/* suivi par épisode (numérotation continue) */
+.ep-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.ep-add input{flex:1;min-width:140px;background:var(--panel);border:1px solid var(--line);color:var(--ivory);
+  padding:9px 12px;border-radius:9px;font-size:14px;outline:none;transition:.15s;font-family:'Inter'}
+.ep-add input:focus{border-color:var(--gold-dim);box-shadow:0 0 0 3px rgba(231,178,76,.12)}
+.ep-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.ep-summary .cnt{font-size:13px;color:var(--muted)}
+.ep-summary .cnt b{color:var(--ivory);font-weight:600}
+.ep-clear{background:none;border:0;color:var(--rouge);cursor:pointer;font-size:12px;padding:0;margin-left:auto}
+.ep-clear:hover{text-decoration:underline}
+.ep-chips{display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow-y:auto}
+.ep-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--gold-dim);
+  color:var(--gold);border-radius:20px;padding:4px 6px 4px 11px;font-size:12px;font-weight:600;line-height:1}
+.ep-chip .se{color:var(--muted);font-weight:400;font-size:10.5px}
+.ep-chip button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;border-radius:50%}
+.ep-chip button:hover{color:var(--rouge)}
+.ep-empty{color:var(--muted);font-size:12.5px;font-style:italic;padding:4px 0}
 /* cast strip */
 .cast-strip{display:flex;gap:12px;overflow-x:auto;padding:16px 26px 26px}
 .cast-strip .person b{font-size:12px}
@@ -918,17 +942,51 @@ canvas.chart{max-height:220px}
           <!-- progression séries : rattachée à « À voir » (série en cours, pas encore terminée) -->
           <div class="progress-block" v-if="movie.media_type==='tv'&&!isWatched(movie)&&movie.seasons">
             <h4>📺 Suivi de progression</h4>
-            <p v-if="!isListed(movie)" style="color:var(--muted);font-size:12px;margin:-4px 0 12px">Renseigner votre avancement ajoutera cette série à votre liste « À voir » (en cours).</p>
-            <div class="season-row" v-for="s in regularSeasons" :key="s.season_number">
-              <span class="slabel">Saison {{s.season_number}}</span>
-              <div class="ep-counter">
-                <input type="number" min="0" :max="s.episode_count" :value="getSeenEps(movie,s.season_number)" @change="setSeenEps(movie,s.season_number,+$event.target.value,s.episode_count)">
-                <span>/ {{s.episode_count}} ép.</span>
-              </div>
-              <div class="progress-bar">
-                <div class="progress-fill" :class="{done:getSeenEps(movie,s.season_number)>=s.episode_count}" :style="{width:(getSeenEps(movie,s.season_number)/s.episode_count*100)+'%'}"></div>
-              </div>
+            <p v-if="!isListed(movie)" class="prog-hint" style="margin:-4px 0 12px">Renseigner votre avancement ajoutera cette série à votre liste « À voir » (en cours).</p>
+
+            <!-- choix du mode de suivi -->
+            <div class="prog-modes">
+              <button class="prog-mode-btn" :class="{on:progMode==='season'}" @click="progMode='season'">Par saison</button>
+              <button class="prog-mode-btn" :class="{on:progMode==='episode'}" @click="progMode='episode'">Par épisode</button>
             </div>
+
+            <!-- mode saison -->
+            <template v-if="progMode==='season'">
+              <div class="season-row" v-for="s in regularSeasons" :key="s.season_number">
+                <span class="slabel">Saison {{s.season_number}}</span>
+                <div class="ep-counter">
+                  <input type="number" min="0" :max="s.episode_count" :value="getSeenEps(movie,s.season_number)" @change="setSeenEps(movie,s.season_number,+$event.target.value,s.episode_count)">
+                  <span>/ {{s.episode_count}} ép.</span>
+                </div>
+                <div class="progress-bar">
+                  <div class="progress-fill" :class="{done:getSeenEps(movie,s.season_number)>=s.episode_count}" :style="{width:(getSeenEps(movie,s.season_number)/s.episode_count*100)+'%'}"></div>
+                </div>
+              </div>
+            </template>
+
+            <!-- mode épisode (numérotation continue) -->
+            <template v-else>
+              <p class="prog-hint">Indiquez les épisodes vus par leur numéro <b>continu</b> (sans tenir compte des saisons). L'épisode 1 de la saison 2 correspond donc au numéro qui suit le dernier épisode de la saison 1. Vous pouvez saisir des numéros séparés par des virgules ou des plages (ex : <b>1-5, 8, 12</b>).</p>
+              <div class="ep-add">
+                <input type="text" inputmode="numeric" :placeholder="'N° d\'épisode (1 à '+(movie.number_of_episodes||'?')+')'" v-model="epInput" @keyup.enter="addEpisodes(movie)">
+                <button class="btn gold" @click="addEpisodes(movie)">Ajouter</button>
+              </div>
+              <div class="ep-summary">
+                <span class="cnt"><b>{{episodesSeenCount(movie)}}</b> / {{movie.number_of_episodes||'?'}} épisode(s) vu(s)</span>
+                <div class="progress-bar" style="max-width:160px">
+                  <div class="progress-fill" :class="{done:epPct(movie)>=100}" :style="{width:epPct(movie)+'%'}"></div>
+                </div>
+                <button v-if="episodesSeenCount(movie)" class="ep-clear" @click="clearEpisodes(movie)">Tout effacer</button>
+              </div>
+              <div class="ep-chips" v-if="getEpisodes(movie).length">
+                <span class="ep-chip" v-for="n in getEpisodes(movie)" :key="n">
+                  {{n}} <span class="se">{{absToSE(movie,n)}}</span>
+                  <button @click="removeEpisode(movie,n)" title="Retirer">✕</button>
+                </span>
+              </div>
+              <p v-else class="ep-empty">Aucun épisode renseigné pour l'instant.</p>
+            </template>
+
             <p v-if="tvPct(movie)>=100" style="color:var(--green);font-size:12.5px;margin:12px 0 0">✓ Vous avez tout vu ! Cliquez sur « Marquer comme terminée » pour la classer dans vos titres vus.</p>
           </div>
         </div>
@@ -1421,8 +1479,9 @@ createApp({
     // --- modale film/série ---
     const movie=ref(null),movieLoading=ref(false),cast=ref([]),crew=ref([]);
     const noteInput=ref(''),noteSaved=ref(''),noteT=ref(null);
+    const epInput=ref(''),progMode=ref('season');   // mode de suivi séries (local à la modale)
     async function openItem(id,type='movie'){
-      type=type||'movie';movieLoading.value=true;movie.value=null;cast.value=[];crew.value=[];noteInput.value='';
+      type=type||'movie';movieLoading.value=true;movie.value=null;cast.value=[];crew.value=[];noteInput.value='';epInput.value='';
       try{
         const d=await apiFetch('/'+type+'/'+id,{append_to_response:'credits'});
         d.media_type=type;d.title=d.title||d.name;d.release_date=d.release_date||d.first_air_date;
@@ -1430,6 +1489,8 @@ createApp({
         // charger la note perso
         const k=keyOf(d);
         if(watched.value[k])noteInput.value=watched.value[k].note||'';
+        // restaurer le mode de suivi choisi précédemment pour cette série
+        progMode.value=(watchlist.value[k]||watched.value[k])?.progressMode||'season';
         // enregistrer acteurs/réalisateurs pour le profil
         recordCastCrew(d);
       }catch(e){flash("Impossible d'ouvrir la fiche.");movie.value=null;}
@@ -1496,33 +1557,86 @@ createApp({
     function toggleWatched(m){
       const k=keyOf(m);
       if(watched.value[k]){removeWatched(m);}
-      else{const wl={...watchlist.value};delete wl[k];watchlist.value=wl;watched.value={...watched.value,[k]:{...slim(m),rating:0,note:'',progress:{}}};flash('Marqué comme vu !');}
+      else{const wl={...watchlist.value};delete wl[k];watchlist.value=wl;watched.value={...watched.value,[k]:{...slim(m),rating:0,note:'',progress:{},episodes:[]}};flash('Marqué comme vu !');}
     }
     function removeWatched(m){const k=keyOf(m);const c={...watched.value};delete c[k];watched.value=c;flash('Retiré des vus.');}
     function rate(m,n){const k=keyOf(m);const cur=watched.value[k]||slim(m);watched.value={...watched.value,[k]:{...cur,rating:n}};}
 
     // progression séries — désormais rattachée à « À voir » (en cours = pas encore terminé)
     const progEntry=m=>watchlist.value[keyOf(m)]||watched.value[keyOf(m)]||null;
-    function getSeenEps(m,sn){return progEntry(m)?.progress?.[sn]||0;}
-    function setSeenEps(m,sn,val,max){
+    const progModeOf=m=>progEntry(m)?.progressMode||'season';
+    // écrit un correctif dans l'entrée « à voir » (en la créant / la sortant des vus si besoin)
+    function progWrite(m,patch){
       const k=keyOf(m);
       const src=watchlist.value[k]||watched.value[k]||slim(m);
-      const prog={...(src.progress||{}),[sn]:Math.min(max,Math.max(0,val))};
       // une série partiellement regardée n'est pas « vue » : on la retire des vus si besoin
       if(watched.value[k]){const w={...watched.value};delete w[k];watched.value=w;}
-      let entry={...src,progress:prog};
+      let entry={...src,progress:src.progress||{},episodes:src.episodes||[],...patch};
       if(entry.order==null){const mx=Object.values(watchlist.value).reduce((a,x)=>Math.max(a,x.order??0),-1);entry.order=mx+1;}
       watchlist.value={...watchlist.value,[k]:entry};
     }
+
+    // --- suivi par saison ---
+    function getSeenEps(m,sn){return progEntry(m)?.progress?.[sn]||0;}
+    function setSeenEps(m,sn,val,max){
+      const prog={...(progEntry(m)?.progress||{}),[sn]:Math.min(max,Math.max(0,val))};
+      progWrite(m,{progress:prog,progressMode:'season'});
+    }
+
+    // --- suivi par épisode (numérotation continue, indépendante des saisons) ---
+    function getEpisodes(m){return (progEntry(m)?.episodes||[]).slice().sort((a,b)=>a-b);}
+    function episodesSeenCount(m){return new Set(progEntry(m)?.episodes||[]).size;}
+    function parseEpRange(str,max){
+      const out=[];
+      (str||'').split(/[,;\s]+/).forEach(tok=>{
+        if(!tok)return;
+        const mm=tok.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+        if(mm){let a=+mm[1],b=+mm[2];if(a>b){const t=a;a=b;b=t;}for(let i=a;i<=b;i++)if(i>=1&&i<=max)out.push(i);}
+        else if(/^\d+$/.test(tok)){const n=+tok;if(n>=1&&n<=max)out.push(n);}
+      });
+      return out;
+    }
+    function addEpisodes(m){
+      const max=m.number_of_episodes||Infinity;
+      const nums=parseEpRange(epInput.value,max);
+      if(!nums.length){flash('Saisissez un numéro valide (ex : 1-5, 8, 12).');return;}
+      const cur=new Set(progEntry(m)?.episodes||[]);
+      nums.forEach(n=>cur.add(n));
+      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b),progressMode:'episode'});
+      epInput.value='';
+      flash(nums.length>1?nums.length+' épisodes ajoutés.':'Épisode '+nums[0]+' ajouté.');
+    }
+    function removeEpisode(m,n){
+      const cur=new Set(progEntry(m)?.episodes||[]);cur.delete(n);
+      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b),progressMode:'episode'});
+    }
+    function clearEpisodes(m){progWrite(m,{episodes:[],progressMode:'episode'});}
+    function epPct(m){if(!m.number_of_episodes)return 0;return Math.min(100,Math.round(episodesSeenCount(m)/m.number_of_episodes*100));}
+    // mappe un numéro continu vers « S?E? » d'après les saisons TMDB (spéciales exclues)
+    function absToSE(m,n){
+      const seasons=(m.seasons||[]).filter(s=>s.season_number>0);
+      if(!seasons.length)return'';
+      let acc=0;
+      for(const s of seasons){
+        if(n<=acc+s.episode_count)return'S'+s.season_number+'·E'+(n-acc);
+        acc+=s.episode_count;
+      }
+      return'';
+    }
+
+    // total d'épisodes vus selon le mode de suivi retenu pour la série
+    function seenEpisodesTotal(m){
+      const e=progEntry(m);if(!e)return 0;
+      if((e.progressMode||'season')==='episode')return new Set(e.episodes||[]).size;
+      return Object.values(e.progress||{}).reduce((s,v)=>s+v,0);
+    }
     function tvPct(m){
-      const e=progEntry(m);if(!e||!m.number_of_episodes)return 0;
-      const total=Object.values(e.progress||{}).reduce((s,v)=>s+v,0);
-      return Math.round(total/m.number_of_episodes*100);
+      if(!m.number_of_episodes)return 0;
+      return Math.min(100,Math.round(seenEpisodesTotal(m)/m.number_of_episodes*100));
     }
     function tvProgressLabel(m){
-      const e=progEntry(m);if(!e)return'';
-      const total=Object.values(e.progress||{}).reduce((s,v)=>s+v,0);
-      return total+' / '+(m.number_of_episodes||'?')+' épisodes vus ('+tvPct(m)+'%)';
+      if(!progEntry(m))return'';
+      return seenEpisodesTotal(m)+' / '+(m.number_of_episodes||'?')+' épisodes vus ('+tvPct(m)+'%)';
     }
     // séries commencées mais non terminées (dans « À voir »)
     const inProgressTv=computed(()=>watchlistArr.value.filter(m=>m.media_type==='tv'&&m.number_of_episodes&&tvPct(m)>0));
@@ -1859,8 +1973,8 @@ createApp({
       const out={};
       for(const k in map){
         const v=map[k];
-        if(/^\d+$/.test(k))out['movie:'+k]={...v,media_type:v.media_type||'movie',note:v.note||'',progress:v.progress||{}};
-        else out[k]={...v,media_type:v.media_type||'movie',note:v.note||'',progress:v.progress||{}};
+        if(/^\d+$/.test(k))out['movie:'+k]={...v,media_type:v.media_type||'movie',note:v.note||'',progress:v.progress||{},episodes:v.episodes||[]};
+        else out[k]={...v,media_type:v.media_type||'movie',note:v.note||'',progress:v.progress||{},episodes:v.episodes||[]};
       }
       return out;
     }
@@ -1920,6 +2034,7 @@ createApp({
       tabsEl,canL,canR,updateArrows,scrollTabs,
       person,openPerson,openPersonById,personDirected,personActed,
       movie,movieLoading,openItem,closeMovie,cast,makers,regularSeasons,noteInput,noteSaved,debounceSaveNote,
+      epInput,progMode,
       watched,watchlist,watchedArr,watchlistArr,watchedSort,watchedType,watchedSorted,
       dragIndex,overIndex,onDragStart,onDragOver,onDrop,onDragEnd,
       onTouchStart,onTouchMove,onTouchEnd,
@@ -1927,6 +2042,7 @@ createApp({
       countWatchedMovies,countWatchedTv,totalHours,
       isWatched,isListed,myRating,toggleList,toggleWatched,removeWatched,rate,
       getSeenEps,setSeenEps,tvPct,tvProgressLabel,inProgressTv,
+      getEpisodes,episodesSeenCount,addEpisodes,removeEpisode,clearEpisodes,absToSE,progModeOf,epPct,
       ratedCount,avgRating,topGenreName,genreScores,
       topRated,topGenresByAvg,decenniePref,ratingStyle,
       profile,spriteDef,
