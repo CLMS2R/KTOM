@@ -965,13 +965,14 @@ canvas.chart{max-height:220px}
             <h4>📺 Suivi de progression</h4>
             <p v-if="!isListed(movie)" class="prog-hint" style="margin:-4px 0 12px">Renseigner votre avancement ajoutera cette série à votre liste « À voir » (en cours).</p>
 
-            <!-- choix du mode de suivi -->
+            <!-- deux vues d'un même suivi : ce que vous saisissez dans l'une apparaît dans l'autre -->
             <div class="prog-modes">
               <button class="prog-mode-btn" :class="{on:progMode==='season'}" @click="progMode='season'">Par saison</button>
               <button class="prog-mode-btn" :class="{on:progMode==='episode'}" @click="progMode='episode'">Par épisode</button>
             </div>
+            <p class="prog-hint" style="margin:-6px 0 12px;font-size:11.5px">Deux façons de renseigner un <b>même</b> suivi : une modification dans une vue se répercute aussitôt dans l'autre.</p>
 
-            <!-- progression TOTALE fusionnée (par saison + par épisode) -->
+            <!-- progression TOTALE (source unique) -->
             <div class="prog-total" v-if="progEntry(movie)">
               <span class="lbl">Progression totale</span>
               <div class="progress-bar" style="flex:1;min-width:90px">
@@ -980,8 +981,9 @@ canvas.chart{max-height:220px}
               <span class="val">{{seenEpisodesTotal(movie)}} / {{movie.number_of_episodes||'?'}} ({{tvPct(movie)}}%)</span>
             </div>
 
-            <!-- mode saison -->
+            <!-- vue saison -->
             <template v-if="progMode==='season'">
+              <p class="prog-hint">Le compteur d'une saison correspond à ses <b>premiers épisodes</b> vus. Pour des épisodes non consécutifs, utilisez la vue « Par épisode ».</p>
               <div class="season-row" v-for="s in regularSeasons" :key="s.season_number">
                 <span class="slabel">Saison {{s.season_number}}</span>
                 <div class="ep-counter">
@@ -994,7 +996,7 @@ canvas.chart{max-height:220px}
               </div>
             </template>
 
-            <!-- mode épisode (numérotation continue) -->
+            <!-- vue épisode (numérotation continue) -->
             <template v-else>
               <p class="prog-hint">Indiquez les épisodes vus par leur numéro <b>continu</b> (sans tenir compte des saisons). L'épisode 1 de la saison 2 correspond donc au numéro qui suit le dernier épisode de la saison 1. Vous pouvez saisir des numéros séparés par des virgules ou des plages (ex : <b>1-5, 8, 12</b>).</p>
               <div class="ep-add">
@@ -1002,7 +1004,7 @@ canvas.chart{max-height:220px}
                 <button class="btn gold" @click="addEpisodes(movie)">Ajouter</button>
               </div>
               <div class="ep-summary">
-                <span class="cnt"><b>{{episodesSeenCount(movie)}}</b> épisode(s) saisi(s) par numéro</span>
+                <span class="cnt"><b>{{episodesSeenCount(movie)}}</b> épisode(s) vu(s)</span>
                 <div class="ep-tools" v-if="episodeGroups(movie).length>1">
                   <button @click="setAllEpSeasons(true)">Tout déplier</button>
                   <button @click="setAllEpSeasons(false)">Tout replier</button>
@@ -1608,21 +1610,32 @@ createApp({
     const progEntry=m=>watchlist.value[keyOf(m)]||watched.value[keyOf(m)]||null;
     const progModeOf=m=>progEntry(m)?.progressMode||'season';
     // écrit un correctif dans l'entrée « à voir » (en la créant / la sortant des vus si besoin)
+    // UNIFICATION : « par saison » et « par épisode » alimentent un SEUL ensemble d'épisodes vus
+    // (numérotation continue). Toute donnée héritée « par saison » (progress) est fondue dans cet
+    // ensemble puis effacée, de sorte qu'il n'existe qu'une seule source de vérité.
     function progWrite(m,patch){
       const k=keyOf(m);
       const src=watchlist.value[k]||watched.value[k]||slim(m);
       // une série partiellement regardée n'est pas « vue » : on la retire des vus si besoin
       if(watched.value[k]){const w={...watched.value};delete w[k];watched.value=w;}
       let entry={...src,progress:src.progress||{},episodes:src.episodes||[],...patch};
-      // mémorise le découpage en saisons (nécessaire pour fusionner les deux modes partout,
-      // y compris sur les cartes « En cours » qui ne disposent pas du détail TMDB complet)
       if(m.seasons&&m.seasons.length){
         entry.seasonCounts=m.seasons.filter(s=>s.season_number>0)
           .sort((a,b)=>a.season_number-b.season_number)
           .map(s=>({sn:s.season_number,count:s.episode_count}));
+        // fond toute progression « par saison » (les N premiers épisodes de chaque saison)
+        // dans l'ensemble d'épisodes, puis vide `progress`.
+        const set=new Set(entry.episodes||[]);
+        for(const sn in (entry.progress||{})){
+          const cnt=entry.progress[sn]||0;if(cnt<=0)continue;
+          let acc=0;for(const s of entry.seasonCounts){if(s.sn===+sn)break;acc+=s.count;}
+          for(let i=1;i<=cnt;i++)set.add(acc+i);
+        }
+        entry.episodes=[...set].sort((a,b)=>a-b);
+        entry.progress={};
       }
       if(entry.order==null){const mx=Object.values(watchlist.value).reduce((a,x)=>Math.max(a,x.order??0),-1);entry.order=mx+1;}
-      entry.progressMode=progMode.value;   // simple mémo d'affichage (n'influence pas le calcul fusionné)
+      entry.progressMode=progMode.value;   // simple mémo d'affichage (vue active)
       watchlist.value={...watchlist.value,[k]:entry};
     }
 
@@ -1636,40 +1649,46 @@ createApp({
     // décalage (nombre d'épisodes cumulés) avant le début d'une saison donnée
     function seasonOffset(list,sn){let acc=0;for(const s of list){if(s.sn===sn)return acc;acc+=s.count;}return acc;}
 
-    // ENSEMBLE fusionné des épisodes vus, en numérotation continue.
-    // Les épisodes cochés « par saison » (les N premiers de chaque saison) et ceux saisis
-    // « par épisode » sont réunis dans un même Set → aucun double comptage possible.
+    // ENSEMBLE unique des épisodes vus, en numérotation continue.
+    // Source de vérité = `episodes`. On y fond aussi toute donnée héritée `progress` non encore
+    // convertie (le welding a lieu au premier enregistrement), afin que l'affichage reste correct.
     function absoluteSeenSet(m){
       const e=progEntry(m);const set=new Set();
       if(!e)return set;
-      const list=seasonList(m);
-      const prog=e.progress||{};
-      if(list.length){
-        for(const sn in prog){
-          const cnt=prog[sn]||0;if(cnt<=0)continue;
-          const base=seasonOffset(list,+sn);
-          for(let i=1;i<=cnt;i++)set.add(base+i);
-        }
-      }else{
-        // repli (ancienne donnée sans découpage mémorisé) : on ne peut pas placer les
-        // épisodes « par saison » précisément, on les compte via des numéros négatifs fictifs
-        // pour éviter toute collision avec les numéros continus réels.
-        let seq=-1;for(const sn in prog){const cnt=prog[sn]||0;for(let i=0;i<cnt;i++)set.add(seq--);}
-      }
       (e.episodes||[]).forEach(n=>set.add(n));
+      const prog=e.progress||{};
+      if(Object.keys(prog).length){
+        const list=seasonList(m);
+        if(list.length){
+          for(const sn in prog){const cnt=prog[sn]||0;if(cnt<=0)continue;const base=seasonOffset(list,+sn);for(let i=1;i<=cnt;i++)set.add(base+i);}
+        }else{
+          // repli (ancienne donnée sans découpage mémorisé) : numéros fictifs négatifs pour compter sans collision
+          let seq=-1;for(const sn in prog){const cnt=prog[sn]||0;for(let i=0;i<cnt;i++)set.add(seq--);}
+        }
+      }
       return set;
     }
 
-    // --- suivi par saison ---
-    function getSeenEps(m,sn){return progEntry(m)?.progress?.[sn]||0;}
+    // --- vue « par saison » : lit et écrit le MÊME ensemble d'épisodes ---
+    // nombre d'épisodes vus de la saison sn (peu importe comment ils ont été saisis)
+    function getSeenEps(m,sn){
+      const set=absoluteSeenSet(m);const list=seasonList(m);const base=seasonOffset(list,sn);
+      const s=list.find(x=>x.sn===sn);const count=s?s.count:0;let c=0;
+      for(let i=1;i<=count;i++)if(set.has(base+i))c++;
+      return c;
+    }
+    // règle la saison sn sur ses N premiers épisodes (ajoute/retire dans l'ensemble commun)
     function setSeenEps(m,sn,val,max){
-      const prog={...(progEntry(m)?.progress||{}),[sn]:Math.min(max,Math.max(0,val))};
-      progWrite(m,{progress:prog});
+      val=Math.min(max,Math.max(0,val));
+      const list=seasonList(m);const base=seasonOffset(list,sn);
+      const set=new Set(absoluteSeenSet(m));
+      for(let i=1;i<=max;i++){const abs=base+i;if(i<=val)set.add(abs);else set.delete(abs);}
+      progWrite(m,{episodes:[...set].sort((a,b)=>a-b),progress:{}});
     }
 
-    // --- suivi par épisode (numérotation continue, indépendante des saisons) ---
-    function getEpisodes(m){return (progEntry(m)?.episodes||[]).slice().sort((a,b)=>a-b);}
-    function episodesSeenCount(m){return new Set(progEntry(m)?.episodes||[]).size;}
+    // --- vue « par épisode » : affiche et modifie le MÊME ensemble ---
+    function getEpisodes(m){return [...absoluteSeenSet(m)].sort((a,b)=>a-b);}
+    function episodesSeenCount(m){return absoluteSeenSet(m).size;}
     function parseEpRange(str,max){
       const out=[];
       (str||'').split(/[,;\s]+/).forEach(tok=>{
@@ -1684,23 +1703,23 @@ createApp({
       const max=m.number_of_episodes||Infinity;
       const nums=parseEpRange(epInput.value,max);
       if(!nums.length){flash('Saisissez un numéro valide (ex : 1-5, 8, 12).');return;}
-      const cur=new Set(progEntry(m)?.episodes||[]);
+      const cur=new Set(absoluteSeenSet(m));
       nums.forEach(n=>cur.add(n));
-      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b)});
+      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b),progress:{}});
       epInput.value='';
       flash(nums.length>1?nums.length+' épisodes ajoutés.':'Épisode '+nums[0]+' ajouté.');
     }
     function removeEpisode(m,n){
-      const cur=new Set(progEntry(m)?.episodes||[]);cur.delete(n);
-      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b)});
+      const cur=new Set(absoluteSeenSet(m));cur.delete(n);
+      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b),progress:{}});
     }
     // retire une plage complète d'épisodes (numéros continus a..b inclus)
     function removeEpisodeRange(m,a,b){
-      const cur=new Set(progEntry(m)?.episodes||[]);
+      const cur=new Set(absoluteSeenSet(m));
       for(let n=a;n<=b;n++)cur.delete(n);
-      progWrite(m,{episodes:[...cur].sort((x,y)=>x-y)});
+      progWrite(m,{episodes:[...cur].sort((x,y)=>x-y),progress:{}});
     }
-    function clearEpisodes(m){progWrite(m,{episodes:[]});}
+    function clearEpisodes(m){progWrite(m,{episodes:[],progress:{}});}
     function epPct(m){if(!m.number_of_episodes)return 0;return Math.min(100,Math.round(episodesSeenCount(m)/m.number_of_episodes*100));}
 
     // regroupe une liste triée de numéros continus en plages [début,fin] consécutives
