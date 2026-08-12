@@ -226,6 +226,22 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .ep-clear{background:none;border:0;color:var(--rouge);cursor:pointer;font-size:12px;padding:0;margin-left:auto}
 .ep-clear:hover{text-decoration:underline}
 .ep-chips{display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow-y:auto}
+/* épisodes vus regroupés par saison + plages repliables */
+.ep-seasons{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto}
+.ep-season{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.ep-season-head{width:100%;display:flex;align-items:center;gap:9px;background:none;border:0;color:var(--ivory);
+  cursor:pointer;padding:9px 12px;font-size:13px;text-align:left;font-family:'Inter'}
+.ep-season-head:hover{background:var(--panel-2)}
+.ep-season-head .chevron{color:var(--gold);font-size:10px;width:10px;display:inline-block;transition:.15s}
+.ep-season-head b{font-weight:600}
+.ep-season-mini{flex:1;height:5px;background:var(--line);border-radius:10px;overflow:hidden;max-width:120px;min-width:50px}
+.ep-season-mini>div{height:100%;background:var(--gold);border-radius:10px}
+.ep-season-mini>div.done{background:var(--green)}
+.ep-season-count{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.ep-ranges{display:flex;flex-wrap:wrap;gap:6px;padding:2px 12px 12px}
+.ep-tools{display:flex;gap:12px;align-items:center;margin-left:auto}
+.ep-tools button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:11.5px;padding:0}
+.ep-tools button:hover{color:var(--gold);text-decoration:underline}
 .ep-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--gold-dim);
   color:var(--gold);border-radius:20px;padding:4px 6px 4px 11px;font-size:12px;font-weight:600;line-height:1}
 .ep-chip .se{color:var(--muted);font-weight:400;font-size:10.5px}
@@ -987,13 +1003,28 @@ canvas.chart{max-height:220px}
               </div>
               <div class="ep-summary">
                 <span class="cnt"><b>{{episodesSeenCount(movie)}}</b> épisode(s) saisi(s) par numéro</span>
+                <div class="ep-tools" v-if="episodeGroups(movie).length>1">
+                  <button @click="setAllEpSeasons(true)">Tout déplier</button>
+                  <button @click="setAllEpSeasons(false)">Tout replier</button>
+                </div>
                 <button v-if="episodesSeenCount(movie)" class="ep-clear" @click="clearEpisodes(movie)">Tout effacer</button>
               </div>
-              <div class="ep-chips" v-if="getEpisodes(movie).length">
-                <span class="ep-chip" v-for="n in getEpisodes(movie)" :key="n">
-                  {{n}} <span class="se">{{absToSE(movie,n)}}</span>
-                  <button @click="removeEpisode(movie,n)" title="Retirer">✕</button>
-                </span>
+              <div class="ep-seasons" v-if="episodeGroups(movie).length">
+                <div class="ep-season" v-for="g in episodeGroups(movie)" :key="g.sn">
+                  <button class="ep-season-head" @click="toggleEpSeason(g.sn)">
+                    <span class="chevron">{{epSeasonOpen(g.sn)?'▼':'▶'}}</span>
+                    <b>Saison {{g.sn}}</b>
+                    <div class="ep-season-mini" v-if="g.count"><div :class="{done:g.seen>=g.count}" :style="{width:Math.min(100,g.seen/g.count*100)+'%'}"></div></div>
+                    <span class="ep-season-count">{{g.seen}}<template v-if="g.count">/{{g.count}}</template> vus</span>
+                  </button>
+                  <div class="ep-ranges" v-show="epSeasonOpen(g.sn)">
+                    <span class="ep-chip" v-for="r in g.ranges" :key="r[0]+'-'+r[1]">
+                      <template v-if="r[0]===r[1]">É{{r[0]-g.base}}</template>
+                      <template v-else>É{{r[0]-g.base}}–{{r[1]-g.base}}</template>
+                      <button @click="removeEpisodeRange(movie,r[0],r[1])" :title="r[0]===r[1]?'Retirer cet épisode':'Retirer cette plage'">✕</button>
+                    </span>
+                  </div>
+                </div>
               </div>
               <p v-else class="ep-empty">Aucun épisode renseigné pour l'instant.</p>
             </template>
@@ -1492,7 +1523,7 @@ createApp({
     const noteInput=ref(''),noteSaved=ref(''),noteT=ref(null);
     const epInput=ref(''),progMode=ref('season');   // mode de suivi séries (local à la modale)
     async function openItem(id,type='movie'){
-      type=type||'movie';movieLoading.value=true;movie.value=null;cast.value=[];crew.value=[];noteInput.value='';epInput.value='';
+      type=type||'movie';movieLoading.value=true;movie.value=null;cast.value=[];crew.value=[];noteInput.value='';epInput.value='';epOpenSeasons.value={};
       try{
         const d=await apiFetch('/'+type+'/'+id,{append_to_response:'credits'});
         d.media_type=type;d.title=d.title||d.name;d.release_date=d.release_date||d.first_air_date;
@@ -1663,8 +1694,47 @@ createApp({
       const cur=new Set(progEntry(m)?.episodes||[]);cur.delete(n);
       progWrite(m,{episodes:[...cur].sort((a,b)=>a-b)});
     }
+    // retire une plage complète d'épisodes (numéros continus a..b inclus)
+    function removeEpisodeRange(m,a,b){
+      const cur=new Set(progEntry(m)?.episodes||[]);
+      for(let n=a;n<=b;n++)cur.delete(n);
+      progWrite(m,{episodes:[...cur].sort((x,y)=>x-y)});
+    }
     function clearEpisodes(m){progWrite(m,{episodes:[]});}
     function epPct(m){if(!m.number_of_episodes)return 0;return Math.min(100,Math.round(episodesSeenCount(m)/m.number_of_episodes*100));}
+
+    // regroupe une liste triée de numéros continus en plages [début,fin] consécutives
+    function toRanges(nums){
+      const out=[];let s=null,p=null;
+      for(const n of nums){if(s===null){s=p=n;}else if(n===p+1){p=n;}else{out.push([s,p]);s=p=n;}}
+      if(s!==null)out.push([s,p]);
+      return out;
+    }
+    // regroupe les épisodes saisis « par numéro » par saison, avec plages repliées
+    function episodeGroups(m){
+      const eps=getEpisodes(m);if(!eps.length)return[];
+      const list=seasonList(m);
+      const groups=new Map();
+      for(const n of eps){
+        let acc=0,sn='?',base=0,found=false;
+        for(const s of list){if(n<=acc+s.count){sn=s.sn;base=acc;found=true;break;}acc+=s.count;}
+        if(!found){sn='?';base=0;}
+        if(!groups.has(sn))groups.set(sn,{sn,base,nums:[]});
+        groups.get(sn).nums.push(n);
+      }
+      const out=[];
+      for(const g of groups.values()){
+        const sc=list.find(s=>s.sn===g.sn);
+        out.push({sn:g.sn,base:g.base,count:sc?sc.count:null,seen:g.nums.length,ranges:toRanges(g.nums)});
+      }
+      out.sort((a,b)=>{const na=typeof a.sn==='number',nb=typeof b.sn==='number';if(na&&nb)return a.sn-b.sn;return na?-1:1;});
+      return out;
+    }
+    // état replié/déplié par saison (réinitialisé à chaque ouverture de fiche)
+    const epOpenSeasons=ref({});
+    function epSeasonOpen(sn){const v=epOpenSeasons.value[sn];if(v!==undefined)return v;return episodesSeenCount(movie.value)<=24;}
+    function toggleEpSeason(sn){epOpenSeasons.value={...epOpenSeasons.value,[sn]:!epSeasonOpen(sn)};}
+    function setAllEpSeasons(open){const map={};episodeGroups(movie.value).forEach(g=>{map[g.sn]=open;});epOpenSeasons.value=map;}
     // mappe un numéro continu vers « S?E? » d'après les saisons TMDB (spéciales exclues)
     function absToSE(m,n){
       const list=seasonList(m);
@@ -2093,8 +2163,9 @@ createApp({
       countWatchedMovies,countWatchedTv,totalHours,
       isWatched,isListed,myRating,toggleList,toggleWatched,removeWatched,rate,
       getSeenEps,setSeenEps,tvPct,tvProgressLabel,inProgressTv,
-      getEpisodes,episodesSeenCount,addEpisodes,removeEpisode,clearEpisodes,absToSE,progModeOf,epPct,
-      progEntry,seenEpisodesTotal,
+      getEpisodes,episodesSeenCount,addEpisodes,removeEpisode,removeEpisodeRange,clearEpisodes,absToSE,progModeOf,epPct,
+      episodeGroups,epSeasonOpen,toggleEpSeason,setAllEpSeasons,
+      progEntry,seenEpisodesTotal,Math,
       ratedCount,avgRating,topGenreName,genreScores,
       topRated,topGenresByAvg,decenniePref,ratingStyle,
       profile,spriteDef,
