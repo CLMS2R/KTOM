@@ -210,6 +210,11 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .prog-mode-btn:hover{color:var(--ivory)}
 .prog-mode-btn.on{background:var(--gold);color:var(--ink)}
 .prog-hint{color:var(--muted);font-size:12px;line-height:1.5;margin:-4px 0 12px}
+/* progression totale fusionnée */
+.prog-total{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:10px 12px;margin-bottom:14px}
+.prog-total .lbl{font-size:12px;font-weight:600;color:var(--gold);font-family:'Oswald';letter-spacing:.05em;text-transform:uppercase}
+.prog-total .val{font-size:12.5px;color:var(--ivory);font-weight:600;white-space:nowrap}
 /* suivi par épisode (numérotation continue) */
 .ep-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .ep-add input{flex:1;min-width:140px;background:var(--panel);border:1px solid var(--line);color:var(--ivory);
@@ -950,6 +955,15 @@ canvas.chart{max-height:220px}
               <button class="prog-mode-btn" :class="{on:progMode==='episode'}" @click="progMode='episode'">Par épisode</button>
             </div>
 
+            <!-- progression TOTALE fusionnée (par saison + par épisode) -->
+            <div class="prog-total" v-if="progEntry(movie)">
+              <span class="lbl">Progression totale</span>
+              <div class="progress-bar" style="flex:1;min-width:90px">
+                <div class="progress-fill" :class="{done:tvPct(movie)>=100}" :style="{width:tvPct(movie)+'%'}"></div>
+              </div>
+              <span class="val">{{seenEpisodesTotal(movie)}} / {{movie.number_of_episodes||'?'}} ({{tvPct(movie)}}%)</span>
+            </div>
+
             <!-- mode saison -->
             <template v-if="progMode==='season'">
               <div class="season-row" v-for="s in regularSeasons" :key="s.season_number">
@@ -972,10 +986,7 @@ canvas.chart{max-height:220px}
                 <button class="btn gold" @click="addEpisodes(movie)">Ajouter</button>
               </div>
               <div class="ep-summary">
-                <span class="cnt"><b>{{episodesSeenCount(movie)}}</b> / {{movie.number_of_episodes||'?'}} épisode(s) vu(s)</span>
-                <div class="progress-bar" style="max-width:160px">
-                  <div class="progress-fill" :class="{done:epPct(movie)>=100}" :style="{width:epPct(movie)+'%'}"></div>
-                </div>
+                <span class="cnt"><b>{{episodesSeenCount(movie)}}</b> épisode(s) saisi(s) par numéro</span>
                 <button v-if="episodesSeenCount(movie)" class="ep-clear" @click="clearEpisodes(movie)">Tout effacer</button>
               </div>
               <div class="ep-chips" v-if="getEpisodes(movie).length">
@@ -1572,15 +1583,57 @@ createApp({
       // une série partiellement regardée n'est pas « vue » : on la retire des vus si besoin
       if(watched.value[k]){const w={...watched.value};delete w[k];watched.value=w;}
       let entry={...src,progress:src.progress||{},episodes:src.episodes||[],...patch};
+      // mémorise le découpage en saisons (nécessaire pour fusionner les deux modes partout,
+      // y compris sur les cartes « En cours » qui ne disposent pas du détail TMDB complet)
+      if(m.seasons&&m.seasons.length){
+        entry.seasonCounts=m.seasons.filter(s=>s.season_number>0)
+          .sort((a,b)=>a.season_number-b.season_number)
+          .map(s=>({sn:s.season_number,count:s.episode_count}));
+      }
       if(entry.order==null){const mx=Object.values(watchlist.value).reduce((a,x)=>Math.max(a,x.order??0),-1);entry.order=mx+1;}
+      entry.progressMode=progMode.value;   // simple mémo d'affichage (n'influence pas le calcul fusionné)
       watchlist.value={...watchlist.value,[k]:entry};
+    }
+
+    // liste ordonnée des saisons régulières (détail TMDB si dispo, sinon copie mémorisée)
+    function seasonList(m){
+      const src=(m&&m.seasons&&m.seasons.length)
+        ? m.seasons.filter(s=>s.season_number>0).map(s=>({sn:s.season_number,count:s.episode_count}))
+        : (progEntry(m)?.seasonCounts||[]);
+      return src.slice().sort((a,b)=>a.sn-b.sn);
+    }
+    // décalage (nombre d'épisodes cumulés) avant le début d'une saison donnée
+    function seasonOffset(list,sn){let acc=0;for(const s of list){if(s.sn===sn)return acc;acc+=s.count;}return acc;}
+
+    // ENSEMBLE fusionné des épisodes vus, en numérotation continue.
+    // Les épisodes cochés « par saison » (les N premiers de chaque saison) et ceux saisis
+    // « par épisode » sont réunis dans un même Set → aucun double comptage possible.
+    function absoluteSeenSet(m){
+      const e=progEntry(m);const set=new Set();
+      if(!e)return set;
+      const list=seasonList(m);
+      const prog=e.progress||{};
+      if(list.length){
+        for(const sn in prog){
+          const cnt=prog[sn]||0;if(cnt<=0)continue;
+          const base=seasonOffset(list,+sn);
+          for(let i=1;i<=cnt;i++)set.add(base+i);
+        }
+      }else{
+        // repli (ancienne donnée sans découpage mémorisé) : on ne peut pas placer les
+        // épisodes « par saison » précisément, on les compte via des numéros négatifs fictifs
+        // pour éviter toute collision avec les numéros continus réels.
+        let seq=-1;for(const sn in prog){const cnt=prog[sn]||0;for(let i=0;i<cnt;i++)set.add(seq--);}
+      }
+      (e.episodes||[]).forEach(n=>set.add(n));
+      return set;
     }
 
     // --- suivi par saison ---
     function getSeenEps(m,sn){return progEntry(m)?.progress?.[sn]||0;}
     function setSeenEps(m,sn,val,max){
       const prog={...(progEntry(m)?.progress||{}),[sn]:Math.min(max,Math.max(0,val))};
-      progWrite(m,{progress:prog,progressMode:'season'});
+      progWrite(m,{progress:prog});
     }
 
     // --- suivi par épisode (numérotation continue, indépendante des saisons) ---
@@ -1602,34 +1655,30 @@ createApp({
       if(!nums.length){flash('Saisissez un numéro valide (ex : 1-5, 8, 12).');return;}
       const cur=new Set(progEntry(m)?.episodes||[]);
       nums.forEach(n=>cur.add(n));
-      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b),progressMode:'episode'});
+      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b)});
       epInput.value='';
       flash(nums.length>1?nums.length+' épisodes ajoutés.':'Épisode '+nums[0]+' ajouté.');
     }
     function removeEpisode(m,n){
       const cur=new Set(progEntry(m)?.episodes||[]);cur.delete(n);
-      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b),progressMode:'episode'});
+      progWrite(m,{episodes:[...cur].sort((a,b)=>a-b)});
     }
-    function clearEpisodes(m){progWrite(m,{episodes:[],progressMode:'episode'});}
+    function clearEpisodes(m){progWrite(m,{episodes:[]});}
     function epPct(m){if(!m.number_of_episodes)return 0;return Math.min(100,Math.round(episodesSeenCount(m)/m.number_of_episodes*100));}
     // mappe un numéro continu vers « S?E? » d'après les saisons TMDB (spéciales exclues)
     function absToSE(m,n){
-      const seasons=(m.seasons||[]).filter(s=>s.season_number>0);
-      if(!seasons.length)return'';
+      const list=seasonList(m);
+      if(!list.length)return'';
       let acc=0;
-      for(const s of seasons){
-        if(n<=acc+s.episode_count)return'S'+s.season_number+'·E'+(n-acc);
-        acc+=s.episode_count;
+      for(const s of list){
+        if(n<=acc+s.count)return'S'+s.sn+'·E'+(n-acc);
+        acc+=s.count;
       }
       return'';
     }
 
-    // total d'épisodes vus selon le mode de suivi retenu pour la série
-    function seenEpisodesTotal(m){
-      const e=progEntry(m);if(!e)return 0;
-      if((e.progressMode||'season')==='episode')return new Set(e.episodes||[]).size;
-      return Object.values(e.progress||{}).reduce((s,v)=>s+v,0);
-    }
+    // total d'épisodes vus = taille de l'ensemble fusionné (par saison + par épisode)
+    function seenEpisodesTotal(m){return absoluteSeenSet(m).size;}
     function tvPct(m){
       if(!m.number_of_episodes)return 0;
       return Math.min(100,Math.round(seenEpisodesTotal(m)/m.number_of_episodes*100));
@@ -2045,6 +2094,7 @@ createApp({
       isWatched,isListed,myRating,toggleList,toggleWatched,removeWatched,rate,
       getSeenEps,setSeenEps,tvPct,tvProgressLabel,inProgressTv,
       getEpisodes,episodesSeenCount,addEpisodes,removeEpisode,clearEpisodes,absToSE,progModeOf,epPct,
+      progEntry,seenEpisodesTotal,
       ratedCount,avgRating,topGenreName,genreScores,
       topRated,topGenresByAvg,decenniePref,ratingStyle,
       profile,spriteDef,
