@@ -300,10 +300,12 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .pseudo-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pseudo-name{font-family:'Oswald';font-size:28px;letter-spacing:.04em;line-height:1}
 /* sélecteur de couleur du pseudo */
-.color-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 2px}
-.color-dot{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
-.color-dot:hover{transform:scale(1.12)}
+.color-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:8px 0 2px}
+.color-swatches{display:grid;grid-template-columns:repeat(8,1fr);gap:9px;max-width:360px;margin:8px 0 10px}
+.color-dot{width:100%;aspect-ratio:1;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
+.color-dot:hover{transform:scale(1.14)}
 .color-dot.on{border-color:var(--ivory);box-shadow:0 0 0 2px var(--ink),0 0 0 3px var(--ivory)}
+@media(max-width:520px){.color-swatches{grid-template-columns:repeat(6,1fr);max-width:300px}}
 .color-custom{position:relative;width:32px;height:32px;border-radius:9px;display:grid;place-items:center;cursor:pointer;
   overflow:hidden;border:1px solid var(--line);font-size:15px;background:var(--panel-2)}
 .color-custom input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
@@ -567,10 +569,12 @@ canvas.chart{max-height:220px}
         </p>
         <label class="credit-label">Couleur de mon pseudo</label>
         <p style="color:var(--muted);font-size:12.5px;line-height:1.5;margin:4px 0 2px">Elle s'applique à votre pseudo sur votre profil et chez les personnes qui vous suivent.</p>
-        <div class="color-row">
+        <div class="color-swatches">
           <button v-for="c in pseudoPalette" :key="c" class="color-dot" :class="{on:pseudoColor.toLowerCase()===c}" :style="{background:c}" @click="pseudoColor=c" :title="c"></button>
+        </div>
+        <div class="color-row">
           <label class="color-custom" title="Couleur personnalisée">
-            <input type="color" :value="pseudoColor||'#e7b24c'" @input="pseudoColor=$event.target.value">🎨
+            <input type="color" :value="pseudoColor||'#ff2d55'" @input="pseudoColor=$event.target.value">🎨
           </label>
           <button class="btn ghost" style="font-size:12px;padding:6px 10px" @click="pseudoColor=''">Par défaut</button>
         </div>
@@ -1358,7 +1362,8 @@ createApp({
 
     // --- couleur du pseudo (personnalisable, synchronisée) ---
     const pseudoColor=ref('');
-    const pseudoPalette=['#e7b24c','#c8483d','#4caf7d','#5b8def','#b07de8','#e87da3','#f3e9d2','#8a8580'];
+    const pseudoPalette=['#ff2d55','#ff375f','#ff6b00','#ff9500','#ffcc00','#ffee00','#aaff00','#34ff3b',
+      '#00ffa3','#00fff0','#00c8ff','#2d7bff','#7a5cff','#c04bff','#ff3ec9','#ff6ec7'];
     // couleur du pseudo d'une personne suivie (issue de ses données synchronisées)
     function followColor(p){const fd=followData.value[p];const c=fd&&fd.data&&fd.data.pseudoColor;return c||'';}
     watch(pseudoColor,v=>{Store.set('cine:pseudocolor',v);scheduleCloudSave();});
