@@ -299,6 +299,14 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .profile-hero2 .profile-avatar{margin-top:-56px;z-index:1;box-shadow:0 6px 18px rgba(0,0,0,.5)}
 .pseudo-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pseudo-name{font-family:'Oswald';font-size:28px;letter-spacing:.04em;line-height:1}
+/* sélecteur de couleur du pseudo */
+.color-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 2px}
+.color-dot{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
+.color-dot:hover{transform:scale(1.12)}
+.color-dot.on{border-color:var(--ivory);box-shadow:0 0 0 2px var(--ink),0 0 0 3px var(--ivory)}
+.color-custom{position:relative;width:32px;height:32px;border-radius:9px;display:grid;place-items:center;cursor:pointer;
+  overflow:hidden;border:1px solid var(--line);font-size:15px;background:var(--panel-2)}
+.color-custom input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
 .archetype-line{font-family:'Oswald';font-size:14px;letter-spacing:.08em;text-transform:uppercase;margin:8px 0 12px}
 /* miniatures critiques + séries en cours */
 .review-item{display:flex;gap:12px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line)}
@@ -553,11 +561,20 @@ canvas.chart{max-height:220px}
       <h2 style="font-family:'Oswald';letter-spacing:.05em;margin-top:0">Réglages</h2>
       <template v-if="sbOn&&user">
         <label class="credit-label" style="margin-top:6px">Compte</label>
-        <p style="color:var(--ivory);font-size:13.5px;margin:4px 0 4px">{{displayName}}</p>
+        <p class="pseudo-name" style="font-size:20px;margin:4px 0 4px" :style="pseudoColor?{color:pseudoColor}:{}">{{displayName}}</p>
         <p style="font-size:12px;margin:0 0 12px" :style="{color:syncState==='error'?'var(--rouge)':'var(--green)'}">
           {{syncState==='saving'?'⟳ Synchronisation…':syncState==='error'?'⚠ Hors ligne — sauvegarde locale active':'✓ Données synchronisées dans le cloud'}}
         </p>
-        <button class="btn ghost" @click="signOut">Se déconnecter</button>
+        <label class="credit-label">Couleur de mon pseudo</label>
+        <p style="color:var(--muted);font-size:12.5px;line-height:1.5;margin:4px 0 2px">Elle s'applique à votre pseudo sur votre profil et chez les personnes qui vous suivent.</p>
+        <div class="color-row">
+          <button v-for="c in pseudoPalette" :key="c" class="color-dot" :class="{on:pseudoColor.toLowerCase()===c}" :style="{background:c}" @click="pseudoColor=c" :title="c"></button>
+          <label class="color-custom" title="Couleur personnalisée">
+            <input type="color" :value="pseudoColor||'#e7b24c'" @input="pseudoColor=$event.target.value">🎨
+          </label>
+          <button class="btn ghost" style="font-size:12px;padding:6px 10px" @click="pseudoColor=''">Par défaut</button>
+        </div>
+        <button class="btn ghost" style="margin-top:16px" @click="signOut">Se déconnecter</button>
         <hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
       </template>
       <p style="color:var(--muted);font-size:13px;line-height:1.5;margin-top:6px">Données locales : {{watchedArr.length}} titre(s) vu(s), {{watchlistArr.length}} à voir.</p>
@@ -768,7 +785,7 @@ canvas.chart{max-height:220px}
       <div class="profile-hero2">
         <div style="flex:1;min-width:0">
           <div class="pseudo-row">
-            <span class="pseudo-name">{{displayName}}</span>
+            <span class="pseudo-name" :style="pseudoColor?{color:pseudoColor}:{}">{{displayName}}</span>
             <span class="lvl-badge" :style="{borderColor:profile.color,color:profile.color}">Niv. {{profile.level}}</span>
           </div>
           <div class="archetype-line" :style="{color:profile.color}"><span style="display:inline-block;vertical-align:-5px;margin-right:6px"><pixel-sprite :def="spriteDef" :size="22"></pixel-sprite></span>{{profile.name}} · {{profile.klass}}</div>
@@ -913,7 +930,7 @@ canvas.chart{max-height:220px}
     <div v-else class="follow-list">
       <button class="follow-row" v-for="p in follows" :key="p" @click="openFollow(p)">
         <span class="follow-ava" :style="{borderColor:followArchetype(p).color}"><pixel-sprite :def="followArchetype(p).def" :size="30"></pixel-sprite></span>
-        <span class="follow-name">@{{p}}</span>
+        <span class="follow-name" :style="followColor(p)?{color:followColor(p)}:{}">@{{p}}</span>
         <span class="follow-count" v-if="followData[p]&&!followData[p].loading&&!followData[p].error">{{activityItems(p).length}} activité(s)</span>
         <span class="follow-go">›</span>
       </button>
@@ -927,14 +944,14 @@ canvas.chart{max-height:220px}
         <button class="btn ghost fdh-back" @click="closeFollow">‹ Retour à mes suivis</button>
         <div class="fdh-id">
           <span class="follow-ava lg" :style="{borderColor:followArchetype(activeFollow).color}"><pixel-sprite :def="followArchetype(activeFollow).def" :size="40"></pixel-sprite></span>
-          <h2>@{{activeFollow}}</h2>
+          <h2 :style="followColor(activeFollow)?{color:followColor(activeFollow)}:{}">@{{activeFollow}}</h2>
           <button class="btn ghost" style="font-size:12.5px;padding:6px 12px;color:var(--rouge);border-color:var(--rouge)" @click="removeFollow(activeFollow)">Ne plus suivre</button>
         </div>
       </div>
     </div>
     <!-- TOP 3 de la personne suivie -->
     <div v-if="followTop3(activeFollow).length" class="db-card" style="margin-bottom:18px">
-      <h3 style="margin:0 0 14px">🏆 Le top 3 de @{{activeFollow}}</h3>
+      <h3 style="margin:0 0 14px">🏆 Le top 3 de <span :style="followColor(activeFollow)?{color:followColor(activeFollow)}:{}">@{{activeFollow}}</span></h3>
       <div class="top3-row">
         <div v-for="(t,i) in followTop3(activeFollow)" :key="t.media_type+t.id" class="top3-slot">
           <span class="pick-rank">{{i+1}}</span>
@@ -951,8 +968,8 @@ canvas.chart{max-height:220px}
       <div v-else class="activity-feed">
         <div v-for="m in shownActivity(activeFollow)" :key="m.media_type+m.id" class="activity-entry">
           <p class="activity-msg">
-            <template v-if="m.note&&m.note.trim()"><b>{{activeFollow}}</b> a formulé la critique suivante :</template>
-            <template v-else><b>{{activeFollow}}</b> a attribué la note de :</template>
+            <template v-if="m.note&&m.note.trim()"><b :style="followColor(activeFollow)?{color:followColor(activeFollow)}:{}">{{activeFollow}}</b> a formulé la critique suivante :</template>
+            <template v-else><b :style="followColor(activeFollow)?{color:followColor(activeFollow)}:{}">{{activeFollow}}</b> a attribué la note de :</template>
           </p>
           <div class="review-item">
             <img v-if="m.poster_path" class="review-thumb" :src="img(m.poster_path,'w92')" loading="lazy" @click="openItem(m.id,m.media_type)">
@@ -1339,6 +1356,13 @@ createApp({
     // le pseudo affiché = partie avant @ de l'email interne
     const displayName=computed(()=>{const e=user.value?.email||'';return e.split('@')[0]||'—';});
 
+    // --- couleur du pseudo (personnalisable, synchronisée) ---
+    const pseudoColor=ref('');
+    const pseudoPalette=['#e7b24c','#c8483d','#4caf7d','#5b8def','#b07de8','#e87da3','#f3e9d2','#8a8580'];
+    // couleur du pseudo d'une personne suivie (issue de ses données synchronisées)
+    function followColor(p){const fd=followData.value[p];const c=fd&&fd.data&&fd.data.pseudoColor;return c||'';}
+    watch(pseudoColor,v=>{Store.set('cine:pseudocolor',v);scheduleCloudSave();});
+
     function authErrFr(msg){
       const m=(msg||'').toLowerCase();
       if(m.includes('invalid login'))return 'Pseudo ou mot de passe incorrect.';
@@ -1369,10 +1393,10 @@ createApp({
       // on efface toute trace locale pour ne rien laisser au compte suivant
       watched.value={};watchlist.value={};
       actorStore.value={};directorStore.value={};
-      suggestions.value=[];tmdbCompare.value=[];bannerKey.value='';top3.value=[];
+      suggestions.value=[];tmdbCompare.value=[];bannerKey.value='';top3.value=[];pseudoColor.value='';
       follows.value=[];followData.value={};
       Store.set('cine:watched',{});Store.set('cine:watchlist',{});
-      Store.set('cine:actors',{});Store.set('cine:directors',{});Store.set('cine:banner','');Store.set('cine:follows',[]);Store.set('cine:top3',[]);
+      Store.set('cine:actors',{});Store.set('cine:directors',{});Store.set('cine:banner','');Store.set('cine:follows',[]);Store.set('cine:top3',[]);Store.set('cine:pseudocolor','');
       flash('Déconnecté.');
     }
 
@@ -1389,6 +1413,7 @@ createApp({
         watchlist.value=migrate(cloud.watchlist||{});
         bannerKey.value=cloud.banner||'';
         top3.value=Array.isArray(cloud.top3)?cloud.top3:[];
+        pseudoColor.value=cloud.pseudoColor||'';
         follows.value=Array.isArray(cloud.follows)?cloud.follows:[];
         cloudReady.value=true;
         if(!data)await cloudSave();   // première connexion : on crée la ligne cloud
@@ -1408,7 +1433,7 @@ createApp({
         const {error}=await SB.from('saves').upsert({
           user_id:user.value.id,
           pseudo:normPseudo(displayName.value),
-          data:{watched:watched.value,watchlist:watchlist.value,banner:bannerKey.value,top3:top3.value,follows:follows.value},
+          data:{watched:watched.value,watchlist:watchlist.value,banner:bannerKey.value,top3:top3.value,pseudoColor:pseudoColor.value,follows:follows.value},
           updated_at:new Date().toISOString()
         });
         syncState.value=error?'error':'synced';
@@ -2239,6 +2264,7 @@ createApp({
       rebuildAggregates();
       bannerKey.value=await Store.get('cine:banner','');
       top3.value=await Store.get('cine:top3',[]);
+      pseudoColor.value=await Store.get('cine:pseudocolor','');
       follows.value=await Store.get('cine:follows',[]);
       nextTick(updateArrows);
       window.addEventListener('resize',updateArrows);
@@ -2271,6 +2297,7 @@ createApp({
     return{
       apiKey,keyInput,keyError,checkingKey,showSettings,saveKey,wipe,
       sbOn,user,needAuth,ready,authName,authPw,authMode,authError,authBusy,doAuth,signOut,syncState,displayName,
+      pseudoColor,pseudoPalette,followColor,
       follows,followData,activityInput,activityError,activityBusy,addFollow,removeFollow,activityItems,
       activeFollow,activityExpanded,shownActivity,openFollow,closeFollow,followArchetype,followBanner,
       fileInput,importMsg,importOk,exportData,triggerImport,importData,unsaved,
