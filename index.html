@@ -338,10 +338,22 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .profile-desc{color:var(--muted);font-size:14px;line-height:1.6;max-width:600px}
 /* sélecteur de bannière */
 .banner-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-top:16px}
-.banner-pick{border:2px solid transparent;border-radius:10px;overflow:hidden;cursor:pointer;background:var(--panel-2);padding:0;transition:.15s;aspect-ratio:2/3}
+.banner-pick{border:2px solid transparent;border-radius:10px;overflow:hidden;cursor:pointer;background:var(--panel-2);padding:0;transition:.15s;aspect-ratio:2/3;position:relative}
 .banner-pick img{width:100%;height:100%;object-fit:cover;display:block}
 .banner-pick:hover{border-color:var(--gold);transform:translateY(-2px)}
 .banner-pick.on{border-color:var(--gold)}
+/* badge de rang (1/2/3) dans le sélecteur et l'affichage du top 3 */
+.pick-rank{position:absolute;top:6px;left:6px;width:26px;height:26px;border-radius:50%;background:var(--gold);color:var(--ink);
+  font-family:'Oswald';font-weight:700;font-size:15px;display:grid;place-items:center;box-shadow:0 2px 6px rgba(0,0,0,.55);z-index:2}
+/* affichage du top 3 (profil + activité d'un suivi) */
+.top3-row{display:flex;gap:12px;flex-wrap:wrap}
+.top3-slot{position:relative;width:104px;aspect-ratio:2/3;border-radius:11px;overflow:hidden;background:var(--panel-2);border:1px solid var(--line)}
+.top3-slot img{width:100%;height:100%;object-fit:cover;display:block;cursor:pointer}
+.top3-slot.empty{display:grid;place-items:center;color:var(--muted);font-size:30px;border-style:dashed}
+.top3-slot .noimg{width:100%;height:100%;display:grid;place-items:center;color:var(--muted);font-size:11px;padding:6px;text-align:center}
+.top3-title{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,.88));
+  color:#fff;font-size:10.5px;padding:16px 6px 5px;line-height:1.2;pointer-events:none}
+@media(max-width:520px){.top3-slot{width:96px}}
 .profile-badges{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;max-width:480px}
 .lvl-badge{font-family:'Oswald';font-size:13px;font-weight:600;letter-spacing:.08em;border:1px solid var(--gold);color:var(--gold);border-radius:20px;padding:3px 12px}
 .pbadge{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-size:13px}
@@ -495,6 +507,34 @@ canvas.chart{max-height:220px}
         </div>
         <div style="margin-top:18px;display:flex;gap:10px">
           <button class="btn ghost" @click="clearBanner">Bannière par défaut</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</transition>
+
+<!-- SÉLECTEUR TOP 3 -->
+<transition name="fade">
+  <div class="overlay" v-if="showTop3Picker" @click.self="showTop3Picker=false">
+    <div class="modal" @click.stop>
+      <div style="padding:26px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+          <h2 style="font-family:'Oswald';letter-spacing:.05em;margin:0;flex:1">Mon top 3</h2>
+          <button class="icon-btn" @click="showTop3Picker=false">✕</button>
+        </div>
+        <p style="color:var(--muted);font-size:13px;line-height:1.5;margin:0 0 6px">Touchez jusqu'à <b style="color:var(--ivory)">3 affiches</b> parmi vos titres vus (films, séries, animes). L'ordre de sélection détermine le classement (1, 2, 3). Touchez à nouveau pour retirer.</p>
+        <p style="color:var(--gold);font-size:13px;margin:0 0 12px">{{top3.length}} / 3 sélectionné(s)</p>
+        <div v-if="!watchedArr.length" style="color:var(--muted);font-size:13px;margin-top:14px">Vous n'avez encore aucun titre vu.</div>
+        <div v-else class="banner-grid">
+          <button v-for="m in watchedArr" :key="m.media_type+m.id" class="banner-pick" :class="{on:top3Rank(m)>0}" @click="toggleTop3(m)" :title="m.title">
+            <span v-if="top3Rank(m)>0" class="pick-rank">{{top3Rank(m)}}</span>
+            <img v-if="m.poster_path" :src="img(m.poster_path,'w185')" loading="lazy">
+            <div v-else style="width:100%;height:100%;display:grid;place-items:center;color:var(--muted);font-size:11px;padding:4px;text-align:center">{{m.title}}</div>
+          </button>
+        </div>
+        <div style="margin-top:18px;display:flex;gap:10px">
+          <button class="btn gold" @click="showTop3Picker=false">Terminé</button>
+          <button v-if="top3.length" class="btn ghost" @click="clearTop3">Tout retirer</button>
         </div>
       </div>
     </div>
@@ -739,6 +779,26 @@ canvas.chart{max-height:220px}
       </div>
     </div>
 
+    <!-- TOP 3 FAVORIS -->
+    <div class="db-card" style="margin-bottom:22px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <h3 style="margin:0;flex:1">🏆 Mon top 3</h3>
+        <button class="btn ghost" style="font-size:13px" @click="showTop3Picker=true">{{top3.length?'Modifier':'Définir mon top 3'}}</button>
+      </div>
+      <div class="top3-row">
+        <template v-for="n in 3" :key="'t3-'+n">
+          <div v-if="top3[n-1]" class="top3-slot">
+            <span class="pick-rank">{{n}}</span>
+            <img v-if="top3[n-1].poster_path" :src="img(top3[n-1].poster_path,'w185')" loading="lazy" @click="openItem(top3[n-1].id,top3[n-1].media_type)" :title="top3[n-1].title">
+            <div v-else class="noimg" @click="openItem(top3[n-1].id,top3[n-1].media_type)">{{top3[n-1].title}}</div>
+            <div class="top3-title">{{top3[n-1].title}}</div>
+          </div>
+          <div v-else class="top3-slot empty" @click="showTop3Picker=true"><span class="pick-rank">{{n}}</span>+</div>
+        </template>
+      </div>
+      <p v-if="!top3.length" style="color:var(--muted);font-size:13px;margin:12px 0 0">Sélectionnez vos 3 titres préférés (films, séries ou animes) : ils apparaîtront ici et en tête de votre activité auprès de ceux qui vous suivent.</p>
+    </div>
+
     <!-- CRITIQUES (3 dernières, dépliable) -->
     <div class="db-card" style="margin-bottom:22px">
       <h3>💬 Vos critiques récentes</h3>
@@ -868,6 +928,18 @@ canvas.chart{max-height:220px}
         </div>
       </div>
     </div>
+    <!-- TOP 3 de la personne suivie -->
+    <div v-if="followTop3(activeFollow).length" class="db-card" style="margin-bottom:18px">
+      <h3 style="margin:0 0 14px">🏆 Le top 3 de @{{activeFollow}}</h3>
+      <div class="top3-row">
+        <div v-for="(t,i) in followTop3(activeFollow)" :key="t.media_type+t.id" class="top3-slot">
+          <span class="pick-rank">{{i+1}}</span>
+          <img v-if="t.poster_path" :src="img(t.poster_path,'w185')" loading="lazy" @click="openItem(t.id,t.media_type)" :title="t.title">
+          <div v-else class="noimg" @click="openItem(t.id,t.media_type)">{{t.title}}</div>
+          <div class="top3-title">{{t.title}}</div>
+        </div>
+      </div>
+    </div>
     <div v-if="followData[activeFollow]&&followData[activeFollow].loading" class="loading"><div class="spinner"></div>Chargement de l'activité…</div>
     <div v-else-if="followData[activeFollow]&&followData[activeFollow].error" class="empty"><div class="em">📡</div><h3>Activité indisponible</h3><p>Impossible de récupérer l'activité pour le moment.</p></div>
     <template v-else>
@@ -891,10 +963,10 @@ canvas.chart{max-height:220px}
             </div>
           </div>
         </div>
-        <button v-if="!activityExpanded&&activityItems(activeFollow).length>4" class="btn ghost" style="font-size:13px" @click="activityExpanded=true">
-          Voir davantage
+        <button v-if="!activityExpanded&&activityItems(activeFollow).length>3" class="btn ghost" style="font-size:13px" @click="activityExpanded=true">
+          Voir les 5 dernières
         </button>
-        <button v-else-if="activityExpanded&&activityItems(activeFollow).length>4" class="btn ghost" style="font-size:13px" @click="activityExpanded=false">
+        <button v-else-if="activityExpanded&&activityItems(activeFollow).length>3" class="btn ghost" style="font-size:13px" @click="activityExpanded=false">
           Réduire
         </button>
       </div>
@@ -1293,10 +1365,10 @@ createApp({
       // on efface toute trace locale pour ne rien laisser au compte suivant
       watched.value={};watchlist.value={};
       actorStore.value={};directorStore.value={};
-      suggestions.value=[];tmdbCompare.value=[];bannerKey.value='';
+      suggestions.value=[];tmdbCompare.value=[];bannerKey.value='';top3.value=[];
       follows.value=[];followData.value={};
       Store.set('cine:watched',{});Store.set('cine:watchlist',{});
-      Store.set('cine:actors',{});Store.set('cine:directors',{});Store.set('cine:banner','');Store.set('cine:follows',[]);
+      Store.set('cine:actors',{});Store.set('cine:directors',{});Store.set('cine:banner','');Store.set('cine:follows',[]);Store.set('cine:top3',[]);
       flash('Déconnecté.');
     }
 
@@ -1312,6 +1384,7 @@ createApp({
         watched.value=migrate(cloud.watched||{});
         watchlist.value=migrate(cloud.watchlist||{});
         bannerKey.value=cloud.banner||'';
+        top3.value=Array.isArray(cloud.top3)?cloud.top3:[];
         follows.value=Array.isArray(cloud.follows)?cloud.follows:[];
         cloudReady.value=true;
         if(!data)await cloudSave();   // première connexion : on crée la ligne cloud
@@ -1331,7 +1404,7 @@ createApp({
         const {error}=await SB.from('saves').upsert({
           user_id:user.value.id,
           pseudo:normPseudo(displayName.value),
-          data:{watched:watched.value,watchlist:watchlist.value,banner:bannerKey.value,follows:follows.value},
+          data:{watched:watched.value,watchlist:watchlist.value,banner:bannerKey.value,top3:top3.value,follows:follows.value},
           updated_at:new Date().toISOString()
         });
         syncState.value=error?'error':'synced';
@@ -1385,10 +1458,18 @@ createApp({
     function activityItems(p){
       const fd=followData.value[p];
       const w=(fd&&fd.data&&fd.data.watched)||{};
-      return Object.values(w).filter(m=>m&&(m.rating>0||(m.note&&String(m.note).trim()))).reverse();
+      const arr=Object.values(w).filter(m=>m&&(m.rating>0||(m.note&&String(m.note).trim())));
+      // du plus récent au plus ancien : horodatage si présent, sinon ordre d'insertion (dernier ajouté = plus récent)
+      return arr.map((m,i)=>({m,i})).sort((a,b)=>{
+        const ta=a.m.activityAt,tb=b.m.activityAt;
+        if(ta!=null&&tb!=null)return tb-ta;
+        if(ta!=null)return -1;
+        if(tb!=null)return 1;
+        return b.i-a.i;
+      }).map(x=>x.m);
     }
-    // activité affichée : 4 récentes, étendue à 8 via « Voir davantage »
-    function shownActivity(p){return activityItems(p).slice(0,activityExpanded.value?8:4);}
+    // activité affichée : 3 plus récentes, extensibles à 5 au maximum
+    function shownActivity(p){return activityItems(p).slice(0,activityExpanded.value?5:3);}
     function openFollow(p){activeFollow.value=p;activityExpanded.value=false;fetchFollow(p);}
     function closeFollow(){activeFollow.value='';}
     // archétype (sprite + couleur) déduit des notes d'un utilisateur suivi
@@ -1555,7 +1636,7 @@ createApp({
       clearTimeout(noteT.value);
       noteT.value=setTimeout(()=>{
         const k=keyOf(m);
-        if(watched.value[k]){watched.value={...watched.value,[k]:{...watched.value[k],note:noteInput.value}};noteSaved.value=k;setTimeout(()=>noteSaved.value='',2000);}
+        if(watched.value[k]){watched.value={...watched.value,[k]:{...watched.value[k],note:noteInput.value,activityAt:Date.now()}};noteSaved.value=k;setTimeout(()=>noteSaved.value='',2000);}
       },700);
     }
 
@@ -1606,7 +1687,7 @@ createApp({
       else{const wl={...watchlist.value};delete wl[k];watchlist.value=wl;watched.value={...watched.value,[k]:{...slim(m),rating:0,note:'',progress:{},episodes:[]}};flash('Marqué comme vu !');}
     }
     function removeWatched(m){const k=keyOf(m);const c={...watched.value};delete c[k];watched.value=c;flash('Retiré des vus.');}
-    function rate(m,n){const k=keyOf(m);const cur=watched.value[k]||slim(m);watched.value={...watched.value,[k]:{...cur,rating:n}};}
+    function rate(m,n){const k=keyOf(m);const cur=watched.value[k]||slim(m);watched.value={...watched.value,[k]:{...cur,rating:n,activityAt:Date.now()}};}
 
     // progression séries — désormais rattachée à « À voir » (en cours = pas encore terminé)
     const progEntry=m=>watchlist.value[keyOf(m)]||watched.value[keyOf(m)]||null;
@@ -1929,6 +2010,22 @@ createApp({
     function clearBanner(){bannerKey.value='';showBannerPicker.value=false;}
     watch(bannerKey,v=>{Store.set('cine:banner',v);scheduleCloudSave();});
 
+    // --- top 3 favoris (3 affiches choisies parmi les titres vus, ordonnées) ---
+    const top3=ref([]);                  // [{id,title,poster_path,media_type}], max 3, dans l'ordre
+    const showTop3Picker=ref(false);
+    const top3Slim=m=>({id:m.id,title:m.title||m.name,poster_path:m.poster_path,media_type:m.media_type||'movie'});
+    const top3Rank=m=>{const i=top3.value.findIndex(x=>keyOf(x)===keyOf(m));return i<0?0:i+1;};
+    function toggleTop3(m){
+      const k=keyOf(m);
+      const idx=top3.value.findIndex(x=>keyOf(x)===k);
+      if(idx>=0){top3.value=top3.value.filter((_,i)=>i!==idx);}
+      else{if(top3.value.length>=3){flash('Trois titres maximum dans le top 3.');return;}top3.value=[...top3.value,top3Slim(m)];}
+    }
+    function clearTop3(){top3.value=[];}
+    // top 3 d'une personne suivie (issu de ses données synchronisées)
+    function followTop3(p){const fd=followData.value[p];const t=fd&&fd.data&&fd.data.top3;return Array.isArray(t)?t.slice(0,3):[];}
+    watch(top3,v=>{Store.set('cine:top3',v);scheduleCloudSave();},{deep:true});
+
     // --- critiques (3 dernières, dépliable) ---
     const reviewsExpanded=ref(false);
     const allNotes=computed(()=>watchedArr.value.filter(m=>m.note&&m.note.trim()).slice().reverse());
@@ -2136,6 +2233,7 @@ createApp({
       titleCredits.value=await Store.get('cine:credits',{});
       rebuildAggregates();
       bannerKey.value=await Store.get('cine:banner','');
+      top3.value=await Store.get('cine:top3',[]);
       follows.value=await Store.get('cine:follows',[]);
       nextTick(updateArrows);
       window.addEventListener('resize',updateArrows);
@@ -2192,6 +2290,7 @@ createApp({
       profile,spriteDef,
       topDirectors,topActors,favBusy,
       bannerPoster,showBannerPicker,setBanner,clearBanner,bannerKey,
+      top3,showTop3Picker,toggleTop3,clearTop3,top3Rank,followTop3,
       reviewsExpanded,allNotes,shownNotes,
       tmdbCompare,loadingCmp,loadTmdbCompare,
       tmdbDiffClass,tmdbDiffLabel,
