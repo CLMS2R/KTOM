@@ -210,6 +210,9 @@ main{max-width:1220px;margin:0 auto;padding:26px 22px 90px}
 .prog-mode-btn:hover{color:var(--ivory)}
 .prog-mode-btn.on{background:var(--gold);color:var(--ink)}
 .prog-hint{color:var(--muted);font-size:12px;line-height:1.5;margin:-4px 0 12px}
+/* sélecteur de découpage TF1 / TMDB */
+.prog-source{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 8px}
+.prog-source .ps-label{font-family:'Oswald';text-transform:uppercase;letter-spacing:.06em;font-size:12px;color:var(--gold)}
 /* progression totale fusionnée */
 .prog-total{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
   border-radius:10px;padding:10px 12px;margin-bottom:14px}
@@ -1065,6 +1068,19 @@ canvas.chart{max-height:220px}
             <h4>📺 Suivi de progression</h4>
             <p v-if="!isListed(movie)" class="prog-hint" style="margin:-4px 0 12px">Renseigner votre avancement ajoutera cette série à votre liste « À voir » (en cours).</p>
 
+            <!-- choix du découpage pour les séries disponibles sur TF1+ -->
+            <div v-if="isTf1Series(movie)" class="prog-source">
+              <span class="ps-label">Découpage&nbsp;:</span>
+              <div class="prog-modes">
+                <button class="prog-mode-btn" :class="{on:seriesCountMode(movie)==='tf1'}" @click="setCountMode(movie,'tf1')">TF1</button>
+                <button class="prog-mode-btn" :class="{on:seriesCountMode(movie)==='tmdb'}" @click="setCountMode(movie,'tmdb')">TMDB</button>
+              </div>
+            </div>
+            <p v-if="isTf1Series(movie)" class="prog-hint" style="font-size:11.5px">
+              <template v-if="seriesCountMode(movie)==='tf1'">Numérotation <b>continue façon TF1+</b> (une seule saison, total {{totalEpisodes(movie)}}).</template>
+              <template v-else>Découpage <b>TMDB</b> ({{movie.number_of_seasons}} saison(s), {{movie.number_of_episodes}} épisodes).</template>
+            </p>
+
             <!-- deux vues d'un même suivi : ce que vous saisissez dans l'une apparaît dans l'autre -->
             <div class="prog-modes">
               <button class="prog-mode-btn" :class="{on:progMode==='season'}" @click="progMode='season'">Par saison</button>
@@ -1399,10 +1415,10 @@ createApp({
       // on efface toute trace locale pour ne rien laisser au compte suivant
       watched.value={};watchlist.value={};
       actorStore.value={};directorStore.value={};
-      suggestions.value=[];tmdbCompare.value=[];bannerKey.value='';top3.value=[];pseudoColor.value='';
+      suggestions.value=[];tmdbCompare.value=[];bannerKey.value='';top3.value=[];pseudoColor.value='';countMode.value={};
       follows.value=[];followData.value={};
       Store.set('cine:watched',{});Store.set('cine:watchlist',{});
-      Store.set('cine:actors',{});Store.set('cine:directors',{});Store.set('cine:banner','');Store.set('cine:follows',[]);Store.set('cine:top3',[]);Store.set('cine:pseudocolor','');
+      Store.set('cine:actors',{});Store.set('cine:directors',{});Store.set('cine:banner','');Store.set('cine:follows',[]);Store.set('cine:top3',[]);Store.set('cine:pseudocolor','');Store.set('cine:countmode',{});
       flash('Déconnecté.');
     }
 
@@ -1420,6 +1436,7 @@ createApp({
         bannerKey.value=cloud.banner||'';
         top3.value=Array.isArray(cloud.top3)?cloud.top3:[];
         pseudoColor.value=cloud.pseudoColor||'';
+        countMode.value=(cloud.countMode&&typeof cloud.countMode==='object')?cloud.countMode:{};
         follows.value=Array.isArray(cloud.follows)?cloud.follows:[];
         cloudReady.value=true;
         if(!data)await cloudSave();   // première connexion : on crée la ligne cloud
@@ -1439,7 +1456,7 @@ createApp({
         const {error}=await SB.from('saves').upsert({
           user_id:user.value.id,
           pseudo:normPseudo(displayName.value),
-          data:{watched:watched.value,watchlist:watchlist.value,banner:bannerKey.value,top3:top3.value,pseudoColor:pseudoColor.value,follows:follows.value},
+          data:{watched:watched.value,watchlist:watchlist.value,banner:bannerKey.value,top3:top3.value,pseudoColor:pseudoColor.value,countMode:countMode.value,follows:follows.value},
           updated_at:new Date().toISOString()
         });
         syncState.value=error?'error':'synced';
@@ -1643,35 +1660,49 @@ createApp({
     const noteInput=ref(''),noteSaved=ref(''),noteT=ref(null);
     const epInput=ref(''),progMode=ref('season');   // mode de suivi séries (local à la modale)
 
-    // Séries à numérotation CONTINUE façon TF1+ (feuilletons quotidiens) : on ignore le
-    // découpage TMDB (incomplet) et on adopte le total TF1+ en une seule saison continue.
-    // Les valeurs sont un point de repère au 14/08/2026 ; le total « suit » ensuite
-    // automatiquement les épisodes que vous saisissez (il ne bloque jamais au-delà).
+    // Séries connues sur TF1+ (feuilletons quotidiens) : le découpage TMDB est incomplet.
+    // Pour chacune, on connaît le total « continu » façon TF1+ (repère au 14/08/2026, il « suit »
+    // ensuite les épisodes saisis). L'utilisateur choisit par série le découpage : 'tf1' (une saison
+    // continue, total TF1+) ou 'tmdb' (le découpage d'origine de TMDB).
     const TF1_CONTINUOUS={
       6647:9614,     // Amour, Gloire et Beauté (The Bold and the Beautiful)
       112470:1500    // Ici tout commence
     };
-    const isTf1Cont=m=>!!(m&&(m.media_type==='tv'||m.first_air_date)&&TF1_CONTINUOUS[m.id]!=null);
-    function applyTf1Override(d){
-      if(d.media_type!=='tv'||TF1_CONTINUOUS[d.id]==null)return;
-      const base=TF1_CONTINUOUS[d.id];
-      // le total effectif ne descend jamais sous le total TMDB ni sous les épisodes déjà pointés
-      const seen=(watchlist.value[keyOf(d)]||watched.value[keyOf(d)])?.episodes||[];
-      const n=Math.max(base,d.number_of_episodes||0,seen.length?Math.max(...seen):0);
-      d.number_of_episodes=n;
-      d.number_of_seasons=1;
-      d.seasons=[{season_number:1,episode_count:n,name:'Épisodes (numérotation TF1+)',air_date:d.first_air_date}];
-      d.__tf1=true;
-    }
-    // total d'épisodes retenu pour l'affichage/les calculs (grandit avec ce qui est pointé)
-    function totalEpisodes(m){
-      let t=m.number_of_episodes||0;
-      if(TF1_CONTINUOUS[m.id]!=null){
-        t=Math.max(t,TF1_CONTINUOUS[m.id]);
-        const eps=(progEntry(m)?.episodes)||[];
-        if(eps.length)t=Math.max(t,Math.max(...eps));
-      }
+    const isTf1Series=m=>!!(m&&TF1_CONTINUOUS[m.id]!=null);
+    // choix de découpage mémorisé par série (défaut : 'tf1' pour ces séries)
+    const countMode=ref({});
+    function seriesCountMode(m){const v=countMode.value[keyOf(m)];return v==='tmdb'||v==='tf1'?v:'tf1';}
+    const isTf1Cont=m=>isTf1Series(m)&&seriesCountMode(m)==='tf1';
+    // total TF1+ effectif (jamais sous le total TMDB ni sous les épisodes déjà pointés)
+    function tf1Total(m){
+      let t=TF1_CONTINUOUS[m.id]||0;
+      t=Math.max(t,(m.__tmdbEpisodes!=null?m.__tmdbEpisodes:m.number_of_episodes)||0);
+      const eps=(progEntry(m)?.episodes)||[];
+      if(eps.length)t=Math.max(t,Math.max(...eps));
       return t;
+    }
+    // applique le découpage choisi à la fiche ouverte (réversible : conserve l'original TMDB)
+    function applyCountMode(d){
+      if(TF1_CONTINUOUS[d.id]==null)return;
+      if(!d.__tmdbSaved){d.__tmdbSeasons=d.seasons;d.__tmdbEpisodes=d.number_of_episodes;d.__tmdbSeasonsCount=d.number_of_seasons;d.__tmdbSaved=true;}
+      if(seriesCountMode(d)==='tf1'){
+        const n=tf1Total(d);
+        d.number_of_episodes=n;d.number_of_seasons=1;
+        d.seasons=[{season_number:1,episode_count:n,name:'Épisodes (numérotation TF1+)',air_date:d.first_air_date}];
+        d.__tf1=true;
+      }else{
+        d.seasons=d.__tmdbSeasons;d.number_of_episodes=d.__tmdbEpisodes;d.number_of_seasons=d.__tmdbSeasonsCount;d.__tf1=false;
+      }
+    }
+    function setCountMode(m,mode){
+      countMode.value={...countMode.value,[keyOf(m)]:mode};
+      if(movie.value&&movie.value.id===m.id){applyCountMode(movie.value);movie.value={...movie.value};}
+    }
+    watch(countMode,v=>{Store.set('cine:countmode',v);scheduleCloudSave();},{deep:true});
+    // total d'épisodes retenu pour l'affichage/les calculs, selon le découpage choisi
+    function totalEpisodes(m){
+      if(isTf1Series(m)&&seriesCountMode(m)==='tf1')return tf1Total(m);
+      return (m.__tmdbEpisodes!=null?m.__tmdbEpisodes:m.number_of_episodes)||0;
     }
 
     async function openItem(id,type='movie'){
@@ -1679,7 +1710,7 @@ createApp({
       try{
         const d=await apiFetch('/'+type+'/'+id,{append_to_response:'credits'});
         d.media_type=type;d.title=d.title||d.name;d.release_date=d.release_date||d.first_air_date;
-        applyTf1Override(d);
+        applyCountMode(d);
         movie.value=d;cast.value=(d.credits?.cast||[]).slice(0,14);crew.value=d.credits?.crew||[];
         // charger la note perso
         const k=keyOf(d);
@@ -1740,7 +1771,7 @@ createApp({
     const genreScores=computed(()=>{const sc={};for(const m of watchedArr.value){if(!m.rating)continue;for(const g of(m.genre_ids||[]))sc[g]=(sc[g]||0)+m.rating;}return sc;});
     const topGenreName=computed(()=>{const e=Object.entries(genreScores.value).sort((a,b)=>b[1]-a[1]);return e.length?(GENRES_FR[e[0][0]]||''):''});
 
-    function slim(m){return{id:m.id,title:m.title||m.name,poster_path:m.poster_path,release_date:m.release_date||m.first_air_date,media_type:m.media_type||'movie',genre_ids:m.genre_ids||(m.genres?m.genres.map(g=>g.id):[]),vote_average:m.vote_average||0,vote_count:m.vote_count||0,popularity:m.popularity||0,runtime:m.runtime||null,number_of_seasons:m.number_of_seasons||null,number_of_episodes:m.number_of_episodes||null};}
+    function slim(m){return{id:m.id,title:m.title||m.name,poster_path:m.poster_path,release_date:m.release_date||m.first_air_date,media_type:m.media_type||'movie',genre_ids:m.genre_ids||(m.genres?m.genres.map(g=>g.id):[]),vote_average:m.vote_average||0,vote_count:m.vote_count||0,popularity:m.popularity||0,runtime:m.runtime||null,number_of_seasons:(m.__tmdbSeasonsCount!=null?m.__tmdbSeasonsCount:m.number_of_seasons)||null,number_of_episodes:(m.__tmdbEpisodes!=null?m.__tmdbEpisodes:m.number_of_episodes)||null};}
     const isWatched=m=>!!watched.value[keyOf(m)];
     const isListed=m=>!!watchlist.value[keyOf(m)];
     const myRating=m=>watched.value[keyOf(m)]?.rating||0;
@@ -1771,8 +1802,9 @@ createApp({
       // une série partiellement regardée n'est pas « vue » : on la retire des vus si besoin
       if(watched.value[k]){const w={...watched.value};delete w[k];watched.value=w;}
       let entry={...src,progress:src.progress||{},episodes:src.episodes||[],...patch};
-      if(m.seasons&&m.seasons.length){
-        entry.seasonCounts=m.seasons.filter(s=>s.season_number>0)
+      const rawSeasons=(m.__tmdbSeasons&&m.__tmdbSeasons.length?m.__tmdbSeasons:m.seasons)||[];
+      if(rawSeasons.length){
+        entry.seasonCounts=rawSeasons.filter(s=>s.season_number>0)
           .sort((a,b)=>a.season_number-b.season_number)
           .map(s=>({sn:s.season_number,count:s.episode_count}));
         // fond toute progression « par saison » (les N premiers épisodes de chaque saison)
@@ -2305,6 +2337,7 @@ createApp({
       bannerKey.value=await Store.get('cine:banner','');
       top3.value=await Store.get('cine:top3',[]);
       pseudoColor.value=await Store.get('cine:pseudocolor','');
+      countMode.value=await Store.get('cine:countmode',{});
       follows.value=await Store.get('cine:follows',[]);
       nextTick(updateArrows);
       window.addEventListener('resize',updateArrows);
@@ -2354,6 +2387,7 @@ createApp({
       countWatchedMovies,countWatchedTv,totalHours,
       isWatched,isListed,myRating,toggleList,toggleWatched,removeWatched,rate,
       getSeenEps,setSeenEps,tvPct,tvProgressLabel,inProgressTv,totalEpisodes,isTf1Cont,
+      isTf1Series,seriesCountMode,setCountMode,
       getEpisodes,episodesSeenCount,addEpisodes,removeEpisode,removeEpisodeRange,clearEpisodes,absToSE,progModeOf,epPct,
       episodeGroups,epSeasonOpen,toggleEpSeason,setAllEpSeasons,
       progEntry,seenEpisodesTotal,Math,
