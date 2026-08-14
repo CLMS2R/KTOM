@@ -1019,7 +1019,8 @@ canvas.chart{max-height:220px}
           <h2>{{movie.title}}</h2>
           <div class="subline">
             <span v-if="movie.release_date">{{yr(movie.release_date)}}</span>
-            <span v-if="movie.media_type==='tv'&&movie.number_of_seasons">· {{movie.number_of_seasons}} saison(s) · {{movie.number_of_episodes}} épisodes</span>
+            <span v-if="movie.media_type==='tv'&&movie.__tf1">· {{totalEpisodes(movie)}} épisodes (TF1+)</span>
+            <span v-else-if="movie.media_type==='tv'&&movie.number_of_seasons">· {{movie.number_of_seasons}} saison(s) · {{movie.number_of_episodes}} épisodes</span>
             <span v-else-if="movie.runtime">· {{runtime(movie.runtime)}}</span>
             <span v-if="movie.vote_average" style="color:var(--gold)">· ★ {{movie.vote_average.toFixed(1)}}/10 TMDB</span>
           </div>
@@ -1077,7 +1078,7 @@ canvas.chart{max-height:220px}
               <div class="progress-bar" style="flex:1;min-width:90px">
                 <div class="progress-fill" :class="{done:tvPct(movie)>=100}" :style="{width:tvPct(movie)+'%'}"></div>
               </div>
-              <span class="val">{{seenEpisodesTotal(movie)}} / {{movie.number_of_episodes||'?'}} ({{tvPct(movie)}}%)</span>
+              <span class="val">{{seenEpisodesTotal(movie)}} / {{totalEpisodes(movie)||'?'}} ({{tvPct(movie)}}%)</span>
             </div>
 
             <!-- vue saison -->
@@ -1099,7 +1100,7 @@ canvas.chart{max-height:220px}
             <template v-else>
               <p class="prog-hint">Indiquez les épisodes vus par leur numéro <b>continu</b> (sans tenir compte des saisons). L'épisode 1 de la saison 2 correspond donc au numéro qui suit le dernier épisode de la saison 1. Vous pouvez saisir des numéros séparés par des virgules ou des plages (ex : <b>1-5, 8, 12</b>).</p>
               <div class="ep-add">
-                <input type="text" inputmode="numeric" :placeholder="'N° d\'épisode (1 à '+(movie.number_of_episodes||'?')+')'" v-model="epInput" @keyup.enter="addEpisodes(movie)">
+                <input type="text" inputmode="numeric" :placeholder="'N° d\'épisode (1 à '+(totalEpisodes(movie)||'?')+')'" v-model="epInput" @keyup.enter="addEpisodes(movie)">
                 <button class="btn gold" @click="addEpisodes(movie)">Ajouter</button>
               </div>
               <div class="ep-summary">
@@ -1641,11 +1642,44 @@ createApp({
     const movie=ref(null),movieLoading=ref(false),cast=ref([]),crew=ref([]);
     const noteInput=ref(''),noteSaved=ref(''),noteT=ref(null);
     const epInput=ref(''),progMode=ref('season');   // mode de suivi séries (local à la modale)
+
+    // Séries à numérotation CONTINUE façon TF1+ (feuilletons quotidiens) : on ignore le
+    // découpage TMDB (incomplet) et on adopte le total TF1+ en une seule saison continue.
+    // Les valeurs sont un point de repère au 14/08/2026 ; le total « suit » ensuite
+    // automatiquement les épisodes que vous saisissez (il ne bloque jamais au-delà).
+    const TF1_CONTINUOUS={
+      6647:9614,     // Amour, Gloire et Beauté (The Bold and the Beautiful)
+      112470:1500    // Ici tout commence
+    };
+    const isTf1Cont=m=>!!(m&&(m.media_type==='tv'||m.first_air_date)&&TF1_CONTINUOUS[m.id]!=null);
+    function applyTf1Override(d){
+      if(d.media_type!=='tv'||TF1_CONTINUOUS[d.id]==null)return;
+      const base=TF1_CONTINUOUS[d.id];
+      // le total effectif ne descend jamais sous le total TMDB ni sous les épisodes déjà pointés
+      const seen=(watchlist.value[keyOf(d)]||watched.value[keyOf(d)])?.episodes||[];
+      const n=Math.max(base,d.number_of_episodes||0,seen.length?Math.max(...seen):0);
+      d.number_of_episodes=n;
+      d.number_of_seasons=1;
+      d.seasons=[{season_number:1,episode_count:n,name:'Épisodes (numérotation TF1+)',air_date:d.first_air_date}];
+      d.__tf1=true;
+    }
+    // total d'épisodes retenu pour l'affichage/les calculs (grandit avec ce qui est pointé)
+    function totalEpisodes(m){
+      let t=m.number_of_episodes||0;
+      if(TF1_CONTINUOUS[m.id]!=null){
+        t=Math.max(t,TF1_CONTINUOUS[m.id]);
+        const eps=(progEntry(m)?.episodes)||[];
+        if(eps.length)t=Math.max(t,Math.max(...eps));
+      }
+      return t;
+    }
+
     async function openItem(id,type='movie'){
       type=type||'movie';movieLoading.value=true;movie.value=null;cast.value=[];crew.value=[];noteInput.value='';epInput.value='';epOpenSeasons.value={};
       try{
         const d=await apiFetch('/'+type+'/'+id,{append_to_response:'credits'});
         d.media_type=type;d.title=d.title||d.name;d.release_date=d.release_date||d.first_air_date;
+        applyTf1Override(d);
         movie.value=d;cast.value=(d.credits?.cast||[]).slice(0,14);crew.value=d.credits?.crew||[];
         // charger la note perso
         const k=keyOf(d);
@@ -1818,7 +1852,7 @@ createApp({
       return out;
     }
     function addEpisodes(m){
-      const max=m.number_of_episodes||Infinity;
+      const max=isTf1Cont(m)?999999:(m.number_of_episodes||Infinity);
       const nums=parseEpRange(epInput.value,max);
       if(!nums.length){flash('Saisissez un numéro valide (ex : 1-5, 8, 12).');return;}
       const cur=new Set(absoluteSeenSet(m));
@@ -1887,12 +1921,13 @@ createApp({
     // total d'épisodes vus = taille de l'ensemble fusionné (par saison + par épisode)
     function seenEpisodesTotal(m){return absoluteSeenSet(m).size;}
     function tvPct(m){
-      if(!m.number_of_episodes)return 0;
-      return Math.min(100,Math.round(seenEpisodesTotal(m)/m.number_of_episodes*100));
+      const tot=totalEpisodes(m);
+      if(!tot)return 0;
+      return Math.min(100,Math.round(seenEpisodesTotal(m)/tot*100));
     }
     function tvProgressLabel(m){
       if(!progEntry(m))return'';
-      return seenEpisodesTotal(m)+' / '+(m.number_of_episodes||'?')+' épisodes vus ('+tvPct(m)+'%)';
+      return seenEpisodesTotal(m)+' / '+(totalEpisodes(m)||'?')+' épisodes vus ('+tvPct(m)+'%)';
     }
     // séries commencées mais non terminées (dans « À voir »)
     // « commencée » = au moins un épisode vu (peu importe le mode de suivi et le total)
@@ -2318,7 +2353,7 @@ createApp({
       watchlistType,watchlistMovies,watchlistTv,watchlistView,watchlistGrid,watchlistToWatch,
       countWatchedMovies,countWatchedTv,totalHours,
       isWatched,isListed,myRating,toggleList,toggleWatched,removeWatched,rate,
-      getSeenEps,setSeenEps,tvPct,tvProgressLabel,inProgressTv,
+      getSeenEps,setSeenEps,tvPct,tvProgressLabel,inProgressTv,totalEpisodes,isTf1Cont,
       getEpisodes,episodesSeenCount,addEpisodes,removeEpisode,removeEpisodeRange,clearEpisodes,absToSE,progModeOf,epPct,
       episodeGroups,epSeasonOpen,toggleEpSeason,setAllEpSeasons,
       progEntry,seenEpisodesTotal,Math,
